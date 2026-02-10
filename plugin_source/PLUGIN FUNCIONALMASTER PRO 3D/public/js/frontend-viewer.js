@@ -298,29 +298,31 @@ jQuery(document).ready(function ($) {
             if (!poi.lat || !poi.lng) return;
 
             const el = document.createElement('div');
-            el.className = 'poi-marker';
-            // Si hay logo usa imagen de fondo, sino un color sólido
+            el.className = 'poi-marker-container';
+
+            // Contenido interior
+            let iconStyle = '';
             if (poi.logo) {
-                el.style.backgroundImage = `url(${poi.logo})`;
-                el.style.backgroundColor = 'transparent';
+                iconStyle = `background-image: url(${poi.logo});`;
             } else {
-                el.style.backgroundColor = poi.color || '#3b82f6';
+                iconStyle = `background-color: ${poi.color || '#3b82f6'};`;
             }
 
-            el.style.width = '40px';
-            el.style.height = '40px';
-            el.style.backgroundSize = 'cover';
-            el.style.backgroundPosition = 'center';
-            el.style.borderRadius = '50%';
-            el.style.border = `2px solid ${poi.color || '#ffffff'}`;
-            el.style.cursor = 'pointer';
-            el.style.boxShadow = '0 2px 10px rgba(0,0,0,0.3)';
-            el.style.zIndex = '1000'; // Asegurar que esté encima
+            el.innerHTML = `
+                <div class="poi-content">
+                    <div class="poi-label">${poi.title}</div>
+                    <div class="poi-icon" style="${iconStyle}"></div>
+                </div>
+                <div class="poi-stalk"></div>
+                <div class="poi-anchor"></div>
+            `;
 
-            const marker = new maplibregl.Marker({ element: el, anchor: 'center' })
+            // Usar anchor 'bottom' para que la parte inferior toque el suelo
+            const marker = new maplibregl.Marker({ element: el, anchor: 'bottom' })
                 .setLngLat([poi.lng, poi.lat])
                 .addTo(map);
 
+            // Click event en el contenedor para abrir sidebar
             el.addEventListener('click', function(e) {
                 e.stopPropagation(); // Evitar click en mapa
                 openPOISidebar(poi);
