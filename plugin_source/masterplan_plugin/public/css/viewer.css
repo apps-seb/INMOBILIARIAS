@@ -448,3 +448,257 @@
     border-radius: 8px;
     box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
 }
+
+/* =========================================
+   NUEVOS ESTILOS DE PINES Y MODAL (2025)
+   ========================================= */
+
+/* Contenedor de Overlay para Modo Imagen */
+.poi-overlay-container {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    pointer-events: none; /* Permitir clicks a través, excepto en los hijos */
+    z-index: 50; /* Encima del canvas */
+}
+
+/* Base POI Marker */
+.poi-marker {
+    position: absolute; /* Para modo imagen */
+    /* En MapLibre es 'relative' dentro del contenedor que crea la librería */
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: flex-end;
+    cursor: pointer;
+    pointer-events: auto;
+    transition: transform 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+    z-index: 100;
+}
+
+.poi-marker:hover {
+    transform: scale(1.1) translateY(-5px);
+    z-index: 101;
+}
+
+/* === ESTILO 1: ORTOGONAL (Línea Larga Blanca) === */
+.poi-marker.style-orthogonal {
+    width: 40px;
+    height: 120px; /* Alto total */
+}
+
+.poi-marker.style-orthogonal .poi-icon-box {
+    width: 40px;
+    height: 40px;
+    background: white;
+    border-radius: 8px;
+    box-shadow: 0 4px 15px rgba(0,0,0,0.3);
+    padding: 5px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border: 2px solid white;
+}
+
+.poi-marker.style-orthogonal .poi-icon-box img {
+    width: 100%;
+    height: 100%;
+    object-fit: contain;
+}
+
+.poi-marker.style-orthogonal .poi-line {
+    width: 2px;
+    height: 80px; /* Resto de la altura */
+    background: white;
+    box-shadow: 0 0 5px rgba(0,0,0,0.5);
+}
+
+.poi-marker.style-orthogonal .poi-dot {
+    width: 8px;
+    height: 8px;
+    background: white;
+    border-radius: 50%;
+    margin-top: -4px; /* Centrar en el fin de la línea */
+    box-shadow: 0 0 5px rgba(0,0,0,0.5);
+}
+
+/* === ESTILO 2: GOLD 3D (Icono Dorado) === */
+.poi-marker.style-gold {
+    width: 60px;
+    height: 70px;
+}
+
+.poi-marker.style-gold .poi-icon-wrapper {
+    width: 50px;
+    height: 50px;
+    background: radial-gradient(circle at 30% 30%, #ffd700, #b8860b);
+    border-radius: 50% 50% 50% 0;
+    transform: rotate(-45deg);
+    box-shadow: 5px 5px 15px rgba(0,0,0,0.4), inset -2px -2px 5px rgba(0,0,0,0.2);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    position: relative;
+    border: 2px solid #fff8dc;
+}
+
+.poi-marker.style-gold .poi-icon-inner {
+    width: 34px;
+    height: 34px;
+    background: white;
+    border-radius: 50%;
+    transform: rotate(45deg); /* Contrarrestar rotación */
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    overflow: hidden;
+    box-shadow: inset 0 2px 5px rgba(0,0,0,0.2);
+}
+
+.poi-marker.style-gold .poi-icon-inner img {
+    width: 80%;
+    height: 80%;
+    object-fit: contain;
+}
+
+.poi-marker.style-gold::after {
+    content: '';
+    width: 20px;
+    height: 6px;
+    background: rgba(0,0,0,0.3);
+    border-radius: 50%;
+    position: absolute;
+    bottom: -5px;
+    filter: blur(2px);
+}
+
+/* === ESTILO 3: FLAG (Bandera) === */
+.poi-marker.style-flag {
+    width: 60px;
+    height: 80px;
+    align-items: flex-start; /* Alinear a la izquierda (el palo) */
+}
+
+.poi-marker.style-flag .poi-flag-content {
+    background: linear-gradient(90deg, #ff4d4d, #cc0000);
+    color: white;
+    padding: 5px 10px;
+    border-radius: 4px 4px 4px 0;
+    font-weight: bold;
+    font-size: 12px;
+    box-shadow: 2px 2px 5px rgba(0,0,0,0.3);
+    display: flex;
+    align-items: center;
+    gap: 5px;
+    min-width: 60px;
+}
+
+.poi-marker.style-flag .poi-pole {
+    width: 3px;
+    height: 100%;
+    background: #333;
+    border-radius: 2px;
+    position: absolute;
+    left: 0;
+    bottom: 0;
+}
+
+/* === BOTTOM SHEET MODAL === */
+.poi-bottom-sheet {
+    position: fixed;
+    bottom: 0;
+    left: 0;
+    width: 100%;
+    background: white; /* Glassmorphism fallback */
+    background: rgba(255, 255, 255, 0.95);
+    backdrop-filter: blur(10px);
+    border-radius: 20px 20px 0 0;
+    box-shadow: 0 -5px 30px rgba(0,0,0,0.2);
+    z-index: 10000;
+    transform: translateY(100%);
+    transition: transform 0.4s cubic-bezier(0.16, 1, 0.3, 1);
+    padding: 0;
+    max-height: 80vh;
+    overflow-y: auto;
+}
+
+.poi-bottom-sheet.active {
+    transform: translateY(0);
+}
+
+.poi-sheet-header {
+    padding: 15px;
+    display: flex;
+    justify-content: center;
+    border-bottom: 1px solid rgba(0,0,0,0.05);
+    position: relative;
+}
+
+.poi-sheet-handle {
+    width: 40px;
+    height: 5px;
+    background: #ddd;
+    border-radius: 5px;
+}
+
+.poi-sheet-close {
+    position: absolute;
+    right: 20px;
+    top: 15px;
+    background: none;
+    border: none;
+    font-size: 24px;
+    color: #999;
+    cursor: pointer;
+}
+
+.poi-sheet-content {
+    padding: 25px;
+    text-align: center;
+}
+
+.poi-sheet-title {
+    font-size: 24px;
+    font-weight: 800;
+    color: #1a1a1a;
+    margin: 0 0 10px 0;
+}
+
+.poi-sheet-meta {
+    display: flex;
+    justify-content: center;
+    gap: 15px;
+    margin-bottom: 20px;
+    color: #666;
+    font-size: 14px;
+}
+
+.poi-sheet-distance {
+    background: #f0fdf4;
+    color: #166534;
+    padding: 5px 12px;
+    border-radius: 15px;
+    font-weight: 600;
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+}
+
+.poi-sheet-type {
+    background: #eff6ff;
+    color: #1e40af;
+    padding: 5px 12px;
+    border-radius: 15px;
+    font-weight: 600;
+}
+
+.poi-sheet-actions {
+    margin-top: 20px;
+}
+
+/* Ocultar el marcador por defecto si usamos los nuevos */
+.poi-marker-default {
+    /* Estilos para el marcador simple por defecto */
+}
