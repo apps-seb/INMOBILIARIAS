@@ -315,6 +315,39 @@ class Masterplan_Project_Editor
                 </div>
             </div>
 
+            <!-- Modal para nuevo POI -->
+            <div id="new-poi-modal" class="modal-overlay" style="display: none;">
+                <div class="modal-content">
+                    <div class="modal-header">
+                        <h2>➕ Nuevo Punto de Interés</h2>
+                        <button type="button" class="modal-close">&times;</button>
+                    </div>
+                    <form id="new-poi-form">
+                        <input type="hidden" name="project_id" value="<?php echo $project_id; ?>">
+
+                        <div class="form-row">
+                            <label for="new_poi_title">Nombre del POI *</label>
+                            <input type="text" id="new_poi_title" name="title" required placeholder="Ej: Entrada Principal">
+                        </div>
+
+                        <div class="form-row">
+                            <label for="new_poi_type">Tipo</label>
+                            <select id="new_poi_type" name="type">
+                                <option value="info">ℹ️ Información</option>
+                                <option value="park">🌳 Parque / Zona Verde</option>
+                                <option value="facility">🏢 Instalación / Amenidad</option>
+                                <option value="entrance">🚪 Acceso / Portería</option>
+                            </select>
+                        </div>
+
+                        <div class="form-actions">
+                            <button type="button" class="button modal-close">Cancelar</button>
+                            <button type="submit" class="button button-primary">Crear POI</button>
+                        </div>
+                    </form>
+                </div>
+            </div>
+
         </div>
 
         <style>
