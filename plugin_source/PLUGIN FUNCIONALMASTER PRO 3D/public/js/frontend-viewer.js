@@ -94,6 +94,7 @@ jQuery(document).ready(function ($) {
         backgroundImage.onload = function () {
             resizeCanvas();
             loadLots();
+            loadPOIs();
         };
 
         if (backgroundImage.complete) {

@@ -384,7 +384,57 @@ jQuery(document).ready(function ($) {
             drawPolygonOnCanvas(currentPoints, '#667eea', true);
         }
 
-        // Dibujar POIs en modo imagen (si hubiera soporte, por ahora básico)
+        // Dibujar POIs en modo imagen
+        renderImagePOIs();
+
+        // Dibujar marcador temporal de POI
+        if (isPlacingPOI) {
+            // Si hay un marcador temporal, dibujarlo (se implementará si es necesario visualmente)
+        }
+    }
+
+    function renderImagePOIs() {
+        if (!poisData || poisData.length === 0) return;
+
+        const offsetX = parseFloat(canvas.dataset.offsetX);
+        const offsetY = parseFloat(canvas.dataset.offsetY);
+        const drawWidth = parseFloat(canvas.dataset.drawWidth);
+        const drawHeight = parseFloat(canvas.dataset.drawHeight);
+
+        poisData.forEach(function(poi) {
+            if (!poi.lat || !poi.lng) return;
+
+            // En modo imagen, lat=Y, lng=X (0-1)
+            const x = offsetX + (poi.lng * drawWidth);
+            const y = offsetY + (poi.lat * drawHeight);
+
+            // Dibujar POI
+            const size = 24;
+
+            ctx.beginPath();
+            ctx.arc(x, y, size/2, 0, Math.PI * 2);
+            ctx.fillStyle = poi.color || '#3b82f6';
+            ctx.fill();
+            ctx.strokeStyle = 'white';
+            ctx.lineWidth = 2;
+            ctx.stroke();
+
+            // Icono simple (letra P o icono)
+            ctx.fillStyle = 'white';
+            ctx.font = 'bold 12px Arial';
+            ctx.textAlign = 'center';
+            ctx.textBaseline = 'middle';
+            ctx.fillText('P', x, y);
+
+            // Si es el seleccionado en el formulario, resaltar
+            if ($('#poi_id').val() == poi.id) {
+                ctx.beginPath();
+                ctx.arc(x, y, size/2 + 4, 0, Math.PI * 2);
+                ctx.strokeStyle = '#fbbf24'; // Amarillo
+                ctx.lineWidth = 3;
+                ctx.stroke();
+            }
+        });
     }
 
     function renderImagePolygons() {
@@ -473,8 +523,6 @@ jQuery(document).ready(function ($) {
     }
 
     function onCanvasClick(e) {
-        if (!isDrawing && !isPlacingPOI) return;
-
         const rect = canvas.getBoundingClientRect();
         const clickX = e.clientX - rect.left;
         const clickY = e.clientY - rect.top;
@@ -489,6 +537,30 @@ jQuery(document).ready(function ($) {
             clickY < offsetY || clickY > offsetY + drawHeight) {
             return;
         }
+
+        // Verificar si se clickeó un POI (prioridad si no se está dibujando/colocando)
+        if (!isDrawing && !isPlacingPOI && poisData && poisData.length > 0) {
+            const clickedPOI = poisData.find(poi => {
+                if (!poi.lat || !poi.lng) return false;
+
+                // Coordenadas en pantalla
+                const px = offsetX + (poi.lng * drawWidth);
+                const py = offsetY + (poi.lat * drawHeight);
+
+                // Radio de click (15px)
+                const dist = Math.sqrt(Math.pow(clickX - px, 2) + Math.pow(clickY - py, 2));
+                return dist <= 15;
+            });
+
+            if (clickedPOI) {
+                editPOI(clickedPOI.id);
+                // Resaltar selección
+                redrawCanvas();
+                return;
+            }
+        }
+
+        if (!isDrawing && !isPlacingPOI) return;
 
         // Convertir a coordenadas relativas (0-1)
         const relX = (clickX - offsetX) / drawWidth;
