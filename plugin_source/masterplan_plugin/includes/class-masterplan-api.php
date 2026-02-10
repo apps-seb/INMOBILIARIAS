@@ -202,6 +202,7 @@ class Masterplan_API
         foreach ($pois as $poi) {
             $lat = get_post_meta($poi->ID, '_poi_lat', true);
             $lng = get_post_meta($poi->ID, '_poi_lng', true);
+            $custom_image_id = get_post_meta($poi->ID, '_poi_custom_image_id', true);
 
             if (!$lat || !$lng) continue; // Solo devolver POIs con ubicación
 
@@ -209,6 +210,8 @@ class Masterplan_API
                 'id' => $poi->ID,
                 'title' => $poi->post_title,
                 'type' => get_post_meta($poi->ID, '_poi_type', true),
+                'style' => get_post_meta($poi->ID, '_poi_style', true) ?: 'default',
+                'custom_image_url' => $custom_image_id ? wp_get_attachment_url($custom_image_id) : '',
                 'lat' => $lat,
                 'lng' => $lng,
                 'description' => get_the_excerpt($poi->ID) ?: $poi->post_content,

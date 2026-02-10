@@ -230,6 +230,7 @@ jQuery(document).ready(function ($) {
 
     function renderMapPOIs() {
         document.querySelectorAll('.poi-marker-admin').forEach(el => el.remove());
+        document.querySelectorAll('.poi-marker').forEach(el => el.remove()); // Remove custom styled ones too
 
         poisData.forEach(poi => {
             renderSingleMapMarker(poi);
@@ -239,13 +240,16 @@ jQuery(document).ready(function ($) {
     function renderSingleMapMarker(poi) {
         if (!poi.lat || !poi.lng) return;
 
-        const el = document.createElement('div');
-        el.className = 'poi-marker-admin';
-        el.innerHTML = '📍';
-        el.style.cssText = 'font-size: 24px; cursor: pointer;';
-        el.title = poi.title;
+        const el = createPoiMarkerElement(poi);
+        el.className += ' poi-marker-admin'; // Add admin class for easy selection
 
-        const marker = new maplibregl.Marker(el)
+        // Ensure style for admin view visibility if css is missing
+        if (!poi.style || poi.style === 'default') {
+             el.style.fontSize = '30px';
+             el.style.cursor = 'pointer';
+        }
+
+        const marker = new maplibregl.Marker({ element: el, anchor: 'bottom' })
             .setLngLat([parseFloat(poi.lng), parseFloat(poi.lat)])
             .addTo(map);
 
@@ -263,6 +267,23 @@ jQuery(document).ready(function ($) {
     function initImageEditor() {
         canvas = document.getElementById('image-canvas');
         if (!canvas) return;
+
+        // Create Overlay Container for POIs in Admin Mode too
+        const container = document.getElementById('image-editor-container');
+        if (!container.querySelector('.poi-overlay-container')) {
+             const overlay = document.createElement('div');
+             overlay.className = 'poi-overlay-container';
+             overlay.id = 'poi-overlay-container-admin';
+             // Need basic styles for overlay in admin
+             overlay.style.position = 'absolute';
+             overlay.style.top = '0';
+             overlay.style.left = '0';
+             overlay.style.width = '100%';
+             overlay.style.height = '100%';
+             overlay.style.pointerEvents = 'none';
+             overlay.style.zIndex = '10'; // Above canvas
+             container.appendChild(overlay);
+        }
 
         ctx = canvas.getContext('2d');
         backgroundImage = document.getElementById('background-image');
@@ -326,17 +347,55 @@ jQuery(document).ready(function ($) {
 
         // Dibujar polígonos existentes
         renderImagePolygons();
-        renderImagePOIs();
+
+        // Render POIs using DOM Overlay
+        updatePoiOverlayPositions();
 
         // Dibujar polígono temporal
         if (currentPoints.length > 0) {
             drawPolygonOnCanvas(currentPoints, '#667eea', true);
         }
 
-        // Dibujar marcador de POI actual si se está colocando
+        // Dibujar marcador de POI actual si se está colocando (TEMP)
         if (activeTab === 'pois' && isPlacingPoi && currentPoiMarker) {
-             drawPoiOnCanvas(currentPoiMarker, true);
+             // For temp marker, render it in overlay too
+             // We handle this inside updatePoiOverlayPositions by including currentPoiMarker in the loop logic
+             // Or explicitly adding it.
+             // To keep it simple, we can rely on `poisData` update for saved ones,
+             // but `currentPoiMarker` is temp. Let's add a special temporary DOM element.
+             renderTempPoiMarker(currentPoiMarker);
+        } else {
+            const tempEl = document.getElementById('temp-poi-marker');
+            if (tempEl) tempEl.remove();
         }
+    }
+
+    function renderTempPoiMarker(poi) {
+        const overlay = document.getElementById('poi-overlay-container-admin');
+        let el = document.getElementById('temp-poi-marker');
+
+        if (!el) {
+            el = createPoiMarkerElement(poi);
+            el.id = 'temp-poi-marker';
+            el.style.opacity = '0.7'; // Indicate temp status
+            overlay.appendChild(el);
+        } else {
+            // Update style if needed (e.g. if we had style editing live, which we don't really here yet)
+             // But we do update position
+        }
+
+        const offsetX = parseFloat(canvas.dataset.offsetX);
+        const offsetY = parseFloat(canvas.dataset.offsetY);
+        const drawWidth = parseFloat(canvas.dataset.drawWidth);
+        const drawHeight = parseFloat(canvas.dataset.drawHeight);
+
+        const x = offsetX + (parseFloat(poi.lng) * drawWidth);
+        const y = offsetY + (parseFloat(poi.lat) * drawHeight);
+
+        el.style.position = 'absolute';
+        el.style.left = x + 'px';
+        el.style.top = y + 'px';
+        el.style.transform = 'translate(-50%, -100%)';
     }
 
     function renderImagePolygons() {
@@ -350,35 +409,94 @@ jQuery(document).ready(function ($) {
     }
 
     function renderImagePOIs() {
-        poisData.forEach(poi => {
-            if (!poi.lat || !poi.lng) return;
-            // Omitir si es el seleccionado y estamos editando, aunque para POIs es un punto simple
-            drawPoiOnCanvas(poi, false);
-        });
+        // Now handled by updatePoiOverlayPositions
     }
 
-    function drawPoiOnCanvas(poi, isTemp) {
+    function updatePoiOverlayPositions() {
+        const overlay = document.getElementById('poi-overlay-container-admin');
+        if (!overlay) return;
+
+        // Clear existing REAL markers (keep temp one if handled separately, but easier to rebuild all)
+        // We will remove all except temp one
+        Array.from(overlay.children).forEach(child => {
+            if (child.id !== 'temp-poi-marker') child.remove();
+        });
+
         const offsetX = parseFloat(canvas.dataset.offsetX);
         const offsetY = parseFloat(canvas.dataset.offsetY);
         const drawWidth = parseFloat(canvas.dataset.drawWidth);
         const drawHeight = parseFloat(canvas.dataset.drawHeight);
 
-        const x = offsetX + (parseFloat(poi.lng) * drawWidth); // X = Lng
-        const y = offsetY + (parseFloat(poi.lat) * drawHeight); // Y = Lat
+        poisData.forEach(poi => {
+            if (!poi.lat || !poi.lng) return;
+            if (poi.id == selectedPoiId && isPlacingPoi) return; // Don't show original if moving
 
-        ctx.font = '24px Arial';
-        ctx.textAlign = 'center';
-        ctx.textBaseline = 'bottom';
-        ctx.fillText('📍', x, y);
+            const el = createPoiMarkerElement(poi);
 
-        if (!isTemp) {
-            ctx.font = '12px Arial';
-            ctx.fillStyle = 'white';
-            ctx.strokeStyle = 'black';
-            ctx.lineWidth = 2;
-            ctx.strokeText(poi.title, x, y - 25);
-            ctx.fillText(poi.title, x, y - 25);
+            // Highlight selected
+            if (poi.id == selectedPoiId) {
+                el.style.filter = 'drop-shadow(0 0 5px #667eea)';
+                el.style.zIndex = '200';
+            }
+
+            const x = offsetX + (parseFloat(poi.lng) * drawWidth);
+            const y = offsetY + (parseFloat(poi.lat) * drawHeight);
+
+            el.style.position = 'absolute';
+            el.style.left = x + 'px';
+            el.style.top = y + 'px';
+            el.style.transform = 'translate(-50%, -100%)';
+
+            // Event
+            el.addEventListener('click', (e) => {
+                e.stopPropagation();
+                selectPoi(poi.id);
+            });
+
+            overlay.appendChild(el);
+        });
+    }
+
+    // Helper to create the sophisticated marker DOM structure (Shared with Frontend)
+    function createPoiMarkerElement(poi) {
+        const el = document.createElement('div');
+        el.className = `poi-marker style-${poi.style || 'default'}`;
+        el.title = poi.title;
+        // Enable pointer events for admin selection
+        el.style.pointerEvents = 'auto';
+
+        // Custom Image
+        const imgHtml = poi.custom_image_url
+            ? `<img src="${poi.custom_image_url}" alt="${poi.title}">`
+            : `<span style="font-size:20px">📍</span>`;
+
+        if (poi.style === 'orthogonal') {
+            el.innerHTML = `
+                <div class="poi-icon-box">${imgHtml}</div>
+                <div class="poi-line"></div>
+                <div class="poi-dot"></div>
+            `;
+        } else if (poi.style === 'gold') {
+            el.innerHTML = `
+                <div class="poi-icon-wrapper">
+                    <div class="poi-icon-inner">${imgHtml}</div>
+                </div>
+            `;
+        } else if (poi.style === 'flag') {
+            el.innerHTML = `
+                <div class="poi-flag-content">
+                     ${imgHtml} <span>${poi.title}</span>
+                </div>
+                <div class="poi-pole"></div>
+            `;
+        } else {
+            // Default
+            el.innerHTML = `
+                <div style="font-size: 30px; text-shadow: 0 2px 4px rgba(0,0,0,0.5);">📍</div>
+            `;
         }
+
+        return el;
     }
 
     function drawPolygonOnCanvas(points, color, isTemp, label) {
@@ -888,12 +1006,15 @@ jQuery(document).ready(function ($) {
             id: selectedPoiId,
             title: poi ? poi.title : 'POI',
             lat: lat,
-            lng: lng
+            lng: lng,
+            style: poi ? poi.style : 'default',
+            custom_image_url: poi ? poi.custom_image_url : ''
         };
 
         if (map) {
              // Limpiar y redibujar
              document.querySelectorAll('.poi-marker-admin').forEach(el => el.remove());
+             document.querySelectorAll('.poi-marker').forEach(el => el.remove());
              poisData.forEach(p => {
                  if(p.id == selectedPoiId) return; // No dibujar el original
                  renderSingleMapMarker(p);
