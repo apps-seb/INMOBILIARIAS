@@ -35,6 +35,20 @@ class Masterplan_API
             ),
         ));
 
+        // Endpoint para obtener POIs (opcionalmente filtrados por proyecto)
+        register_rest_route('masterplan/v1', '/pois', array(
+            'methods' => 'GET',
+            'callback' => array($this, 'get_pois'),
+            'permission_callback' => '__return_true',
+            'args' => array(
+                'project_id' => array(
+                    'required' => false,
+                    'type' => 'integer',
+                    'sanitize_callback' => 'absint',
+                ),
+            ),
+        ));
+
         // Endpoint para obtener todos los lotes (legacy + nuevo)
         register_rest_route('masterplan/v1', '/lots', array(
             'methods' => 'GET',
@@ -157,6 +171,52 @@ class Masterplan_API
     {
         $project_id = $request->get_param('project_id');
         return $this->get_lots_by_project($project_id);
+    }
+
+    /**
+     * Obtener POIs (opcionalmente filtrados por proyecto)
+     */
+    public function get_pois($request)
+    {
+        $project_id = $request->get_param('project_id');
+
+        $args = array(
+            'post_type' => 'masterplan_poi',
+            'posts_per_page' => -1,
+            'post_status' => 'publish',
+        );
+
+        if ($project_id) {
+            $args['meta_query'] = array(
+                array(
+                    'key' => '_project_id',
+                    'value' => $project_id,
+                )
+            );
+        }
+
+        $pois = get_posts($args);
+
+        $result = array();
+
+        foreach ($pois as $poi) {
+            $lat = get_post_meta($poi->ID, '_poi_lat', true);
+            $lng = get_post_meta($poi->ID, '_poi_lng', true);
+
+            if (!$lat || !$lng) continue; // Solo devolver POIs con ubicación
+
+            $result[] = array(
+                'id' => $poi->ID,
+                'title' => $poi->post_title,
+                'type' => get_post_meta($poi->ID, '_poi_type', true),
+                'lat' => $lat,
+                'lng' => $lng,
+                'description' => get_the_excerpt($poi->ID) ?: $poi->post_content,
+                'thumbnail' => get_the_post_thumbnail_url($poi->ID, 'thumbnail')
+            );
+        }
+
+        return rest_ensure_response($result);
     }
 
     /**
