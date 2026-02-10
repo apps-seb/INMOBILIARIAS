@@ -12,6 +12,7 @@ jQuery(document).ready(function ($) {
     let ctx = null;
     let backgroundImage = null;
     let lotsData = [];
+    let poisData = [];
 
     // Configuración del proyecto (inyectada por PHP)
     const projectConfig = window.masterplanProjectConfig || {};
@@ -98,6 +99,7 @@ jQuery(document).ready(function ($) {
         if (backgroundImage.complete) {
             resizeCanvas();
             loadLots();
+            loadPOIs();
         }
 
         window.addEventListener('resize', resizeCanvas);
@@ -148,6 +150,55 @@ jQuery(document).ready(function ($) {
         lotsData.forEach(lot => {
             if (!lot.coordinates || lot.coordinates.length < 3) return;
             drawLotOnCanvas(lot);
+        });
+
+        // Dibujar POIs
+        if (typeof poisData !== 'undefined' && poisData.length > 0) {
+            drawPOIsOnCanvas();
+        }
+    }
+
+    function drawPOIsOnCanvas() {
+        const offsetX = parseFloat(canvas.dataset.offsetX);
+        const offsetY = parseFloat(canvas.dataset.offsetY);
+        const drawWidth = parseFloat(canvas.dataset.drawWidth);
+        const drawHeight = parseFloat(canvas.dataset.drawHeight);
+
+        poisData.forEach(poi => {
+            if (poi.lat === null || poi.lng === null) return;
+
+            // En modo imagen, lat es Y (0-1), lng es X (0-1)
+            const x = offsetX + (poi.lng * drawWidth);
+            const y = offsetY + (poi.lat * drawHeight);
+
+            // Dibujar marcador
+            ctx.beginPath();
+
+            if (poi.imgElement && poi.imgElement.complete && poi.imgElement.naturalWidth !== 0) {
+                // Dibujar logo
+                const size = 32;
+                ctx.save();
+                ctx.beginPath();
+                ctx.arc(x, y, size/2, 0, Math.PI * 2);
+                ctx.clip();
+                ctx.drawImage(poi.imgElement, x - size/2, y - size/2, size, size);
+                ctx.restore();
+
+                // Borde
+                ctx.beginPath();
+                ctx.arc(x, y, size/2, 0, Math.PI * 2);
+                ctx.lineWidth = 2;
+                ctx.strokeStyle = 'white';
+                ctx.stroke();
+            } else {
+                // Dibujar círculo de color
+                ctx.arc(x, y, 10, 0, Math.PI * 2);
+                ctx.fillStyle = poi.color || '#3b82f6';
+                ctx.fill();
+                ctx.lineWidth = 2;
+                ctx.strokeStyle = 'white';
+                ctx.stroke();
+            }
         });
     }
 
@@ -216,7 +267,27 @@ jQuery(document).ready(function ($) {
         const drawWidth = parseFloat(canvas.dataset.drawWidth);
         const drawHeight = parseFloat(canvas.dataset.drawHeight);
 
-        // Convertir a coordenadas relativas
+        // Buscar POI clickeado (prioridad sobre lotes)
+        if (typeof poisData !== 'undefined') {
+            const clickedPOI = poisData.find(poi => {
+                if (poi.lat === null || poi.lng === null) return false;
+
+                // Coordenadas en pantalla
+                const px = offsetX + (poi.lng * drawWidth);
+                const py = offsetY + (poi.lat * drawHeight);
+
+                // Radio de click (20px)
+                const dist = Math.sqrt(Math.pow(clickX - px, 2) + Math.pow(clickY - py, 2));
+                return dist <= 20;
+            });
+
+            if (clickedPOI) {
+                openPOISidebar(clickedPOI);
+                return;
+            }
+        }
+
+        // Convertir a coordenadas relativas para lotes
         const relX = (clickX - offsetX) / drawWidth;
         const relY = (clickY - offsetY) / drawHeight;
 
@@ -280,7 +351,34 @@ jQuery(document).ready(function ($) {
             url: masterplanPublic.apiUrl + 'projects/' + projectId + '/pois',
             type: 'GET',
             success: function (pois) {
-                if (map) {
+                poisData = pois;
+
+                if (useCustomImage && canvas) {
+                    // Precargar logos si existen
+                    let toLoad = 0;
+                    let loaded = 0;
+
+                    poisData.forEach(poi => {
+                        if (poi.logo) {
+                            toLoad++;
+                            const img = new Image();
+                            img.src = poi.logo;
+                            img.onload = function() {
+                                loaded++;
+                                if (loaded === toLoad) redrawCanvas();
+                            };
+                            img.onerror = function() {
+                                loaded++; // Continuar aunque falle
+                                if (loaded === toLoad) redrawCanvas();
+                            };
+                            poi.imgElement = img;
+                        }
+                    });
+
+                    if (toLoad === 0) {
+                        redrawCanvas();
+                    }
+                } else if (map) {
                     displayPOIsOnMap(pois);
                 }
             },
@@ -331,10 +429,25 @@ jQuery(document).ready(function ($) {
     }
 
     function openPOISidebar(poi) {
-        // Calcular distancia desde el centro del mapa (usuario)
-        const center = map.getCenter();
-        const dist = calculateDistance(center.lat, center.lng, poi.lat, poi.lng);
-        const distFormatted = dist > 1000 ? (dist / 1000).toFixed(2) + ' km' : Math.round(dist) + ' m';
+        let distanceHTML = '';
+        let buttonHTML = '';
+
+        if (map) {
+            // Calcular distancia desde el centro del mapa (usuario)
+            const center = map.getCenter();
+            const dist = calculateDistance(center.lat, center.lng, poi.lat, poi.lng);
+            const distFormatted = dist > 1000 ? (dist / 1000).toFixed(2) + ' km' : Math.round(dist) + ' m';
+
+            distanceHTML = `
+                <div class="info-row">
+                    <span class="info-label">📍 Distancia:</span>
+                    <span class="info-value" style="color: ${poi.color || '#3b82f6'}; font-weight:bold;">${distFormatted}</span>
+                </div>
+                <p style="font-size: 11px; color: #666; margin-top: 5px; font-style: italic;">(Distancia aproximada desde tu punto de vista)</p>
+            `;
+
+            buttonHTML = `<button id="update-dist-btn" class="btn btn-secondary" style="margin-top: 15px; width: 100%;">📏 Recalcular Distancia</button>`;
+        }
 
         const sidebarHTML = `
             <div class="lot-detail">
@@ -343,18 +456,14 @@ jQuery(document).ready(function ($) {
                 <h2 class="lot-title" style="border-left: 4px solid ${poi.color || '#3b82f6'}; padding-left: 10px;">${poi.title}</h2>
 
                 <div class="lot-info" style="margin-top: 15px;">
-                    <div class="info-row">
-                        <span class="info-label">📍 Distancia:</span>
-                        <span class="info-value" style="color: ${poi.color || '#3b82f6'}; font-weight:bold;">${distFormatted}</span>
-                    </div>
-                    <p style="font-size: 11px; color: #666; margin-top: 5px; font-style: italic;">(Distancia aproximada desde tu punto de vista)</p>
+                    ${distanceHTML}
                 </div>
 
                 <div class="lot-description" style="margin-top: 20px;">
                     ${poi.description || ''}
                 </div>
 
-                <button id="update-dist-btn" class="btn btn-secondary" style="margin-top: 15px; width: 100%;">📏 Recalcular Distancia</button>
+                ${buttonHTML}
             </div>
         `;
 
@@ -363,12 +472,14 @@ jQuery(document).ready(function ($) {
         $('#masterplan-overlay').addClass('active');
 
         // Botón para recalcular distancia si el usuario se mueve
-        $('#update-dist-btn').on('click', function() {
-             const newCenter = map.getCenter();
-             const newDist = calculateDistance(newCenter.lat, newCenter.lng, poi.lat, poi.lng);
-             const newDistFormatted = newDist > 1000 ? (newDist / 1000).toFixed(2) + ' km' : Math.round(newDist) + ' m';
-             $(this).parent().find('.info-value').text(newDistFormatted);
-        });
+        if (map) {
+            $('#update-dist-btn').on('click', function() {
+                 const newCenter = map.getCenter();
+                 const newDist = calculateDistance(newCenter.lat, newCenter.lng, poi.lat, poi.lng);
+                 const newDistFormatted = newDist > 1000 ? (newDist / 1000).toFixed(2) + ' km' : Math.round(newDist) + ' m';
+                 $(this).parent().find('.info-value').text(newDistFormatted);
+            });
+        }
     }
 
     function calculateDistance(lat1, lon1, lat2, lon2) {
