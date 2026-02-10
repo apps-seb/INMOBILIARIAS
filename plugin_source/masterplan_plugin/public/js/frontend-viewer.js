@@ -23,6 +23,25 @@ jQuery(document).ready(function ($) {
      * Inicializar viewer según modo
      */
     function init() {
+        // Inyectar HTML del Bottom Sheet
+        if ($('#poi-bottom-sheet').length === 0) {
+            $('body').append(`
+                <div id="poi-bottom-sheet" class="poi-bottom-sheet">
+                    <div class="poi-sheet-header">
+                        <div class="poi-sheet-handle"></div>
+                        <button class="poi-sheet-close">&times;</button>
+                    </div>
+                    <div class="poi-sheet-content" id="poi-sheet-content"></div>
+                </div>
+            `);
+
+            $(document).on('click', '.poi-sheet-close', closePoiBottomSheet);
+            // El overlay también cierra el bottom sheet si se clickea fuera
+             $(document).on('click', '.masterplan-overlay', function() {
+                 if ($('#poi-bottom-sheet').hasClass('active')) closePoiBottomSheet();
+             });
+        }
+
         if (useCustomImage && projectConfig.customImageUrl) {
             initImageViewer();
         } else if ($('#masterplan-public-map').length) {
@@ -88,6 +107,15 @@ jQuery(document).ready(function ($) {
         canvas = document.getElementById('masterplan-canvas');
         if (!canvas) return;
 
+        // Crear contenedor de overlay para POIs si no existe
+        const container = canvas.parentElement;
+        if (!container.querySelector('.poi-overlay-container')) {
+             const overlay = document.createElement('div');
+             overlay.className = 'poi-overlay-container';
+             overlay.id = 'poi-overlay-container';
+             container.appendChild(overlay);
+        }
+
         ctx = canvas.getContext('2d');
         backgroundImage = document.getElementById('masterplan-background');
 
@@ -100,6 +128,7 @@ jQuery(document).ready(function ($) {
         if (backgroundImage.complete) {
             resizeCanvas();
             loadLots();
+            loadPOIs();
         }
 
         window.addEventListener('resize', resizeCanvas);
@@ -152,36 +181,53 @@ jQuery(document).ready(function ($) {
             drawLotOnCanvas(lot);
         });
 
-        // Dibujar POIs
-        poisData.forEach(poi => {
-            drawPoiOnCanvas(poi);
-        });
+        // Actualizar posiciones de POIs en Overlay
+        updatePoiOverlayPositions();
     }
 
-    function drawPoiOnCanvas(poi) {
-        if (!poi.lat || !poi.lng) return;
+    // Ya no dibujamos POIs en el canvas, usamos DOM Overlay
+    function updatePoiOverlayPositions() {
+        const overlay = document.getElementById('poi-overlay-container');
+        if (!overlay) return;
+
+        if (overlay.children.length !== poisData.length) {
+            overlay.innerHTML = '';
+            poisData.forEach(poi => {
+                if (!poi.lat || !poi.lng) return;
+                const el = createPoiMarkerElement(poi);
+                el.dataset.poiId = poi.id;
+
+                // Evento Click
+                el.addEventListener('click', function(e) {
+                    e.stopPropagation(); // Evitar click en canvas
+                    openPoiBottomSheet(poi);
+                });
+
+                overlay.appendChild(el);
+            });
+        }
 
         const offsetX = parseFloat(canvas.dataset.offsetX);
         const offsetY = parseFloat(canvas.dataset.offsetY);
         const drawWidth = parseFloat(canvas.dataset.drawWidth);
         const drawHeight = parseFloat(canvas.dataset.drawHeight);
 
-        const x = offsetX + (parseFloat(poi.lng) * drawWidth);
-        const y = offsetY + (parseFloat(poi.lat) * drawHeight);
-
-        // Icono
-        ctx.font = '24px Arial';
-        ctx.textAlign = 'center';
-        ctx.textBaseline = 'bottom';
-        ctx.fillText('📍', x, y);
-
-        // Título
-        ctx.font = 'bold 12px Arial';
-        ctx.fillStyle = 'white';
-        ctx.strokeStyle = 'black';
-        ctx.lineWidth = 3;
-        ctx.strokeText(poi.title, x, y - 25);
-        ctx.fillText(poi.title, x, y - 25);
+        // Actualizar posiciones
+        Array.from(overlay.children).forEach(el => {
+            const poiId = el.dataset.poiId;
+            const poi = poisData.find(p => p.id == poiId);
+            if (poi) {
+                const x = offsetX + (parseFloat(poi.lng) * drawWidth);
+                const y = offsetY + (parseFloat(poi.lat) * drawHeight);
+                el.style.left = x + 'px';
+                el.style.top = y + 'px';
+                // Centrar horizontalmente es handled por CSS transform/flex, pero bottom anchor es default
+                // CSS .poi-marker { transform: translate(-50%, -100%); } si anchor es bottom center
+                // Nuestro CSS usa flex column justify-end, pero necesitamos posicionar el contenedor.
+                // Ajustaremos con transform.
+                el.style.transform = 'translate(-50%, -100%)';
+            }
+        });
     }
 
     function drawLotOnCanvas(lot) {
@@ -240,6 +286,9 @@ jQuery(document).ready(function ($) {
     }
 
     function onCanvasClick(e) {
+        // En Modo Imagen, los POIs ahora son DOM elements y capturan su propio click.
+        // Solo necesitamos detectar clicks en lotes aquí.
+
         const rect = canvas.getBoundingClientRect();
         const clickX = e.clientX - rect.left;
         const clickY = e.clientY - rect.top;
@@ -252,18 +301,6 @@ jQuery(document).ready(function ($) {
         // Convertir a coordenadas relativas para lotes
         const relX = (clickX - offsetX) / drawWidth;
         const relY = (clickY - offsetY) / drawHeight;
-
-        // Buscar POI clickeado (Prioridad sobre lotes)
-        const clickedPoi = poisData.find(poi => {
-            if (!poi.lat || !poi.lng) return false;
-            const dist = Math.sqrt(Math.pow(relX - parseFloat(poi.lng), 2) + Math.pow(relY - parseFloat(poi.lat), 2));
-            return dist < 0.03; // Tolerancia de click
-        });
-
-        if (clickedPoi) {
-            openPoiSidebar(clickedPoi);
-            return;
-        }
 
         // Buscar lote clickeado
         const clickedLot = lotsData.find(lot => {
@@ -497,40 +534,67 @@ jQuery(document).ready(function ($) {
         pois.forEach(poi => {
             if (!poi.lat || !poi.lng) return;
 
-            const el = document.createElement('div');
-            el.className = 'poi-marker';
-            el.innerHTML = '📍';
-            el.style.cssText = 'font-size: 30px; cursor: pointer; text-shadow: 0 2px 4px rgba(0,0,0,0.5);';
-            el.title = poi.title;
+            const el = createPoiMarkerElement(poi);
 
+            // En MapLibre, usamos el marcador DOM directamente
             const marker = new maplibregl.Marker({ element: el, anchor: 'bottom' })
                 .setLngLat([parseFloat(poi.lng), parseFloat(poi.lat)])
                 .addTo(map);
 
-            // Popup
-            const popup = new maplibregl.Popup({ offset: 35 })
-                .setHTML(`
-                    <div class="poi-popup">
-                        <h3>${poi.title}</h3>
-                        <p>${poi.type}</p>
-                        <button class="btn-more-info" onclick="window.openPoiSidebarById(${poi.id})">Ver más</button>
-                    </div>
-                `);
-
-            marker.setPopup(popup);
+            // Click Handler para Bottom Sheet
+            el.addEventListener('click', (e) => {
+                e.stopPropagation();
+                openPoiBottomSheet(poi);
+            });
         });
-
-        // Exponer función global para el popup
-        window.openPoiSidebarById = function(poiId) {
-            const poi = poisData.find(p => p.id == poiId);
-            if (poi) openPoiSidebar(poi);
-        };
     }
 
     /**
-     * Abrir sidebar con información del lote
+     * Crea el elemento DOM para el marcador basado en el estilo
      */
-    function openPoiSidebar(poi) {
+    function createPoiMarkerElement(poi) {
+        const el = document.createElement('div');
+        el.className = `poi-marker style-${poi.style || 'default'}`;
+        el.title = poi.title;
+
+        // Custom Image
+        const imgHtml = poi.custom_image_url
+            ? `<img src="${poi.custom_image_url}" alt="${poi.title}">`
+            : `<span style="font-size:20px">📍</span>`;
+
+        if (poi.style === 'orthogonal') {
+            el.innerHTML = `
+                <div class="poi-icon-box">${imgHtml}</div>
+                <div class="poi-line"></div>
+                <div class="poi-dot"></div>
+            `;
+        } else if (poi.style === 'gold') {
+            el.innerHTML = `
+                <div class="poi-icon-wrapper">
+                    <div class="poi-icon-inner">${imgHtml}</div>
+                </div>
+            `;
+        } else if (poi.style === 'flag') {
+            el.innerHTML = `
+                <div class="poi-flag-content">
+                     ${imgHtml} <span>${poi.title}</span>
+                </div>
+                <div class="poi-pole"></div>
+            `;
+        } else {
+            // Default
+            el.innerHTML = `
+                <div style="font-size: 30px; text-shadow: 0 2px 4px rgba(0,0,0,0.5);">📍</div>
+            `;
+        }
+
+        return el;
+    }
+
+    /**
+     * Abrir Bottom Sheet con información del POI
+     */
+    function openPoiBottomSheet(poi) {
         const typeLabels = {
             'info': 'ℹ️ Información',
             'park': '🌳 Parque / Zona Verde',
@@ -538,25 +602,67 @@ jQuery(document).ready(function ($) {
             'entrance': '🚪 Acceso / Portería'
         };
 
-        const sidebarHTML = `
-            <div class="lot-detail poi-detail">
-                ${poi.thumbnail ? `<img src="${poi.thumbnail}" alt="${poi.title}" class="lot-image">` : ''}
+        // Calcular Distancia (Solo Map Mode)
+        let distanceHtml = '';
+        if (map && projectConfig.centerLat && projectConfig.centerLng) {
+            const dist = getDistanceFromLatLonInKm(
+                parseFloat(projectConfig.centerLat),
+                parseFloat(projectConfig.centerLng),
+                parseFloat(poi.lat),
+                parseFloat(poi.lng)
+            );
 
-                <div class="lot-header">
-                    <h2 class="lot-title">${poi.title}</h2>
+            const distText = dist < 1
+                ? `${Math.round(dist * 1000)} metros`
+                : `${dist.toFixed(2)} km`;
+
+            distanceHtml = `
+                <div class="poi-sheet-distance">
+                    <span>📏</span> A ${distText} del proyecto
+                </div>
+            `;
+        }
+
+        const sheetHTML = `
+            <div style="text-align:center;">
+                <h2 class="poi-sheet-title">${poi.title}</h2>
+                <div class="poi-sheet-meta">
+                    <div class="poi-sheet-type">${typeLabels[poi.type] || poi.type}</div>
+                    ${distanceHtml}
                 </div>
 
-                <div class="lot-status" style="background-color: #3b82f6;">
-                    ${typeLabels[poi.type] || poi.type}
-                </div>
+                ${poi.thumbnail ? `<img src="${poi.thumbnail}" style="width:100%; max-height:200px; object-fit:cover; border-radius:8px; margin-bottom:15px;" alt="${poi.title}">` : ''}
 
-                ${poi.description ? `<div class="lot-description">${poi.description}</div>` : ''}
+                ${poi.description ? `<p style="color:#666; line-height:1.6;">${poi.description}</p>` : ''}
             </div>
         `;
 
-        $('#sidebar-content').html(sidebarHTML);
-        $('#masterplan-sidebar').addClass('active');
+        $('#poi-sheet-content').html(sheetHTML);
+        $('#poi-bottom-sheet').addClass('active');
         $('#masterplan-overlay').addClass('active');
+    }
+
+    function closePoiBottomSheet() {
+        $('#poi-bottom-sheet').removeClass('active');
+        $('#masterplan-overlay').removeClass('active');
+    }
+
+    // Haversine Formula
+    function getDistanceFromLatLonInKm(lat1, lon1, lat2, lon2) {
+        var R = 6371; // Radius of the earth in km
+        var dLat = deg2rad(lat2 - lat1);
+        var dLon = deg2rad(lon2 - lon1);
+        var a =
+            Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+            Math.cos(deg2rad(lat1)) * Math.cos(deg2rad(lat2)) *
+            Math.sin(dLon / 2) * Math.sin(dLon / 2);
+        var c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+        var d = R * c; // Distance in km
+        return d;
+    }
+
+    function deg2rad(deg) {
+        return deg * (Math.PI / 180);
     }
 
     function openSidebar(lotId) {
@@ -649,7 +755,19 @@ jQuery(document).ready(function ($) {
         $('#masterplan-overlay').removeClass('active');
     }
 
-    $(document).on('click', '#sidebar-close-btn, #masterplan-overlay', closeSidebar);
+    $(document).on('click', '#sidebar-close-btn', closeSidebar);
+
+    // Remover click en overlay para sidebar si es necesario,
+    // pero como ahora usamos el overlay para cerrar también el bottom sheet,
+    // y la función closeSidebar también remueve .active del overlay,
+    // podemos dejar que closeSidebar maneje su parte y closePoiBottomSheet la suya.
+    // Solo hay que asegurar que no se solapen conflictos.
+    // El click en overlay en init() llama a closePoiBottomSheet.
+    // Añadiremos handler de overlay para sidebar aquí para seguridad si no estaba.
+    $(document).on('click', '#masterplan-overlay', function() {
+        if ($('#masterplan-sidebar').hasClass('active')) closeSidebar();
+    });
+
 
     window.showContactForm = function (lotId) {
         $('#contact-form-container').slideDown();

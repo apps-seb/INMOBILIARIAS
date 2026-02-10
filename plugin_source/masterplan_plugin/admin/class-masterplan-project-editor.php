@@ -96,10 +96,13 @@ class Masterplan_Project_Editor
 
         $pois_data = array();
         foreach ($pois as $poi) {
+            $custom_image_id = get_post_meta($poi->ID, '_poi_custom_image_id', true);
             $pois_data[] = array(
                 'id' => $poi->ID,
                 'title' => $poi->post_title,
                 'type' => get_post_meta($poi->ID, '_poi_type', true) ?: 'info',
+                'style' => get_post_meta($poi->ID, '_poi_style', true) ?: 'default',
+                'custom_image_url' => $custom_image_id ? wp_get_attachment_url($custom_image_id) : '',
                 'lat' => get_post_meta($poi->ID, '_poi_lat', true),
                 'lng' => get_post_meta($poi->ID, '_poi_lng', true),
                 'thumbnail' => get_the_post_thumbnail_url($poi->ID, 'thumbnail')
@@ -338,6 +341,27 @@ class Masterplan_Project_Editor
                                 <option value="facility">🏢 Instalación / Amenidad</option>
                                 <option value="entrance">🚪 Acceso / Portería</option>
                             </select>
+                        </div>
+
+                        <div class="form-row">
+                            <label for="new_poi_style">Estilo del Pin</label>
+                            <select id="new_poi_style" name="style">
+                                <option value="default">📍 Estándar</option>
+                                <option value="orthogonal">📏 Línea Ortogonal con Logo</option>
+                                <option value="gold">🏆 Icono 3D Dorado</option>
+                                <option value="flag">🚩 Bandera</option>
+                            </select>
+                        </div>
+
+                        <div class="form-row" id="poi-custom-image-row" style="display:none;">
+                            <label>Logo / Icono Personalizado</label>
+                            <div class="image-upload-container">
+                                <input type="hidden" name="custom_image_id" id="new_poi_custom_image_id">
+                                <div id="poi-image-preview" style="margin-bottom: 10px; max-width: 100px; display: none;"></div>
+                                <button type="button" class="button" id="btn-upload-poi-image">Subir Imagen</button>
+                                <button type="button" class="button" id="btn-remove-poi-image" style="display:none; color: #ef4444;">Eliminar</button>
+                            </div>
+                            <p class="description">Recomendado: PNG transparente</p>
                         </div>
 
                         <div class="form-actions">
@@ -707,6 +731,48 @@ class Masterplan_Project_Editor
             nonce: '<?php echo wp_create_nonce('masterplan_admin_nonce'); ?>',
             selectedLotId: <?php echo $lot_id ?: 'null'; ?>
         };
+
+        jQuery(document).ready(function($) {
+            // Mostrar/Ocultar subida de imagen según estilo
+            $('#new_poi_style').on('change', function() {
+                var style = $(this).val();
+                if (style === 'orthogonal' || style === 'gold' || style === 'flag') {
+                    $('#poi-custom-image-row').slideDown();
+                } else {
+                    $('#poi-custom-image-row').slideUp();
+                }
+            });
+
+            // Media Uploader para POI
+            var poiFrame;
+            $('#btn-upload-poi-image').on('click', function(e) {
+                e.preventDefault();
+                if (poiFrame) {
+                    poiFrame.open();
+                    return;
+                }
+                poiFrame = wp.media({
+                    title: 'Seleccionar Logo o Icono',
+                    button: { text: 'Usar esta imagen' },
+                    multiple: false
+                });
+                poiFrame.on('select', function() {
+                    var attachment = poiFrame.state().get('selection').first().toJSON();
+                    $('#new_poi_custom_image_id').val(attachment.id);
+                    $('#poi-image-preview').html('<img src="'+attachment.sizes.thumbnail.url+'" style="max-width:100px;">').show();
+                    $('#btn-remove-poi-image').show();
+                    $('#btn-upload-poi-image').text('Cambiar Imagen');
+                });
+                poiFrame.open();
+            });
+
+            $('#btn-remove-poi-image').on('click', function() {
+                $('#new_poi_custom_image_id').val('');
+                $('#poi-image-preview').hide().empty();
+                $(this).hide();
+                $('#btn-upload-poi-image').text('Subir Imagen');
+            });
+        });
         </script>
         <?php
     }
@@ -956,6 +1022,8 @@ class Masterplan_Project_Editor
         $project_id = isset($_POST['project_id']) ? absint($_POST['project_id']) : 0;
         $title = isset($_POST['title']) ? sanitize_text_field($_POST['title']) : '';
         $type = isset($_POST['type']) ? sanitize_text_field($_POST['type']) : 'info';
+        $style = isset($_POST['style']) ? sanitize_text_field($_POST['style']) : 'default';
+        $custom_image_id = isset($_POST['custom_image_id']) ? absint($_POST['custom_image_id']) : 0;
 
         if (!$project_id || !$title) {
             wp_send_json_error(array('message' => 'Datos incompletos'));
@@ -975,6 +1043,10 @@ class Masterplan_Project_Editor
         // Guardar metadatos
         update_post_meta($poi_id, '_project_id', $project_id);
         update_post_meta($poi_id, '_poi_type', $type);
+        update_post_meta($poi_id, '_poi_style', $style);
+        if ($custom_image_id) {
+            update_post_meta($poi_id, '_poi_custom_image_id', $custom_image_id);
+        }
 
         wp_send_json_success(array(
             'message' => 'POI creado exitosamente',
@@ -982,6 +1054,8 @@ class Masterplan_Project_Editor
                 'id' => $poi_id,
                 'title' => $title,
                 'type' => $type,
+                'style' => $style,
+                'custom_image_url' => $custom_image_id ? wp_get_attachment_url($custom_image_id) : '',
                 'lat' => null,
                 'lng' => null
             )
