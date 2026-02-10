@@ -102,6 +102,8 @@ class Masterplan_Core
         $this->loader->add_action('wp_ajax_masterplan_create_lot', $project_editor, 'create_lot');
         $this->loader->add_action('wp_ajax_masterplan_save_lot_polygon', $project_editor, 'save_lot_polygon');
         $this->loader->add_action('wp_ajax_masterplan_search_location', $project_editor, 'search_location');
+        $this->loader->add_action('wp_ajax_masterplan_save_poi', $project_editor, 'save_poi');
+        $this->loader->add_action('wp_ajax_masterplan_delete_poi', $project_editor, 'delete_poi');
     }
 
     /**

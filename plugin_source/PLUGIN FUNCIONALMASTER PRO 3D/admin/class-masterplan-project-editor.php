@@ -32,6 +32,9 @@ class Masterplan_Project_Editor
             return;
         }
 
+        // Enqueue Media
+        wp_enqueue_media();
+
         // Obtener configuración del proyecto
         $use_custom_image = get_post_meta($project_id, '_project_use_custom_image', true);
         $custom_image_id = get_post_meta($project_id, '_project_custom_image_id', true);
@@ -77,6 +80,35 @@ class Masterplan_Project_Editor
             );
         }
 
+        // Obtener POIs del proyecto
+        $pois = get_posts(array(
+            'post_type' => 'masterplan_poi',
+            'posts_per_page' => -1,
+            'meta_query' => array(
+                array(
+                    'key' => '_poi_project_id',
+                    'value' => $project_id,
+                    'compare' => '='
+                )
+            ),
+            'post_status' => array('publish')
+        ));
+
+        $pois_data = array();
+        foreach ($pois as $poi) {
+            $pois_data[] = array(
+                'id' => $poi->ID,
+                'title' => $poi->post_title,
+                'excerpt' => $poi->post_excerpt,
+                'lat' => get_post_meta($poi->ID, '_poi_lat', true),
+                'lng' => get_post_meta($poi->ID, '_poi_lng', true),
+                'alt' => get_post_meta($poi->ID, '_poi_alt', true),
+                'viz_type' => get_post_meta($poi->ID, '_poi_viz_type', true),
+                'color' => get_post_meta($poi->ID, '_poi_color', true),
+                'logo_url' => get_the_post_thumbnail_url($poi->ID, 'thumbnail')
+            );
+        }
+
 ?>
         <div class="wrap masterplan-editor-wrap">
             <div class="masterplan-editor-header">
@@ -100,51 +132,96 @@ class Masterplan_Project_Editor
             </div>
 
             <div class="masterplan-editor-container">
-                <!-- Panel izquierdo: Lista de lotes -->
+                <!-- Panel izquierdo: Listas -->
                 <div class="lots-panel">
-                    <div class="panel-header">
-                        <h3>📍 Lotes del Proyecto</h3>
-                        <button type="button" id="btn-new-lot" class="button button-primary">
-                            ➕ Nuevo Lote
-                        </button>
+                    <div class="panel-header-tabs">
+                        <div class="tab-item active" data-tab="lots">📍 Lotes</div>
+                        <div class="tab-item" data-tab="pois">🚩 Puntos de Interés</div>
                     </div>
 
-                    <div class="lots-list" id="lots-list">
-                        <?php if (empty($lots_data)): ?>
-                            <div class="no-lots">
-                                <p>No hay lotes creados</p>
-                                <small>Haz clic en "Nuevo Lote" para comenzar</small>
-                            </div>
-                        <?php
+                    <!-- Pestaña LOTES -->
+                    <div class="tab-content active" id="tab-content-lots">
+                        <div class="panel-actions">
+                            <button type="button" id="btn-new-lot" class="button button-primary" style="width:100%">
+                                ➕ Nuevo Lote
+                            </button>
+                        </div>
+                        <div class="lots-list" id="lots-list">
+                            <?php if (empty($lots_data)): ?>
+                                <div class="no-items">
+                                    <p>No hay lotes creados</p>
+                                    <small>Haz clic en "Nuevo Lote" para comenzar</small>
+                                </div>
+                            <?php
         else: ?>
-                            <?php foreach ($lots_data as $lot):
+                                <?php foreach ($lots_data as $lot):
                 $status_colors = array('disponible' => '#10b981', 'reservado' => '#f59e0b', 'vendido' => '#ef4444');
                 $status_color = isset($status_colors[$lot['status']]) ? $status_colors[$lot['status']] : '#ccc';
 ?>
-                                <div class="lot-item <?php echo $lot_id == $lot['id'] ? 'active' : ''; ?>"
-                                     data-lot-id="<?php echo $lot['id']; ?>">
-                                    <div class="lot-status-indicator" style="background: <?php echo $status_color; ?>"></div>
-                                    <div class="lot-info">
-                                        <strong><?php echo esc_html($lot['lot_number'] ?: 'Sin número'); ?></strong>
-                                        <small><?php echo esc_html($lot['title']); ?></small>
-                                        <?php if ($lot['price']): ?>
-                                            <span class="lot-price">$ <?php echo number_format($lot['price'], 0, ',', '.'); ?></span>
-                                        <?php
+                                    <div class="lot-item <?php echo $lot_id == $lot['id'] ? 'active' : ''; ?>"
+                                         data-lot-id="<?php echo $lot['id']; ?>">
+                                        <div class="lot-status-indicator" style="background: <?php echo $status_color; ?>"></div>
+                                        <div class="lot-info">
+                                            <strong><?php echo esc_html($lot['lot_number'] ?: 'Sin número'); ?></strong>
+                                            <small><?php echo esc_html($lot['title']); ?></small>
+                                            <?php if ($lot['price']): ?>
+                                                <span class="lot-price">$ <?php echo number_format($lot['price'], 0, ',', '.'); ?></span>
+                                            <?php
                 endif; ?>
+                                        </div>
+                                        <div class="lot-actions">
+                                            <button type="button" class="btn-draw" title="Dibujar polígono">
+                                                <?php echo $lot['coordinates'] ? '✏️' : '🎨'; ?>
+                                            </button>
+                                            <a href="<?php echo get_edit_post_link($lot['id']); ?>" class="btn-edit" title="Editar lote">
+                                                ⚙️
+                                            </a>
+                                        </div>
                                     </div>
-                                    <div class="lot-actions">
-                                        <button type="button" class="btn-draw" title="Dibujar polígono">
-                                            <?php echo $lot['coordinates'] ? '✏️' : '🎨'; ?>
-                                        </button>
-                                        <a href="<?php echo get_edit_post_link($lot['id']); ?>" class="btn-edit" title="Editar lote">
-                                            ⚙️
-                                        </a>
-                                    </div>
-                                </div>
-                            <?php
+                                <?php
             endforeach; ?>
-                        <?php
+                            <?php
         endif; ?>
+                        </div>
+                    </div>
+
+                    <!-- Pestaña POIs -->
+                    <div class="tab-content" id="tab-content-pois" style="display:none;">
+                        <div class="panel-actions">
+                            <button type="button" id="btn-new-poi" class="button button-primary" style="width:100%">
+                                🚩 Nuevo Punto de Interés
+                            </button>
+                        </div>
+                        <div class="lots-list" id="pois-list">
+                            <!-- Los POIs se renderizarán vía JS o PHP -->
+                            <?php if (empty($pois_data)): ?>
+                                <div class="no-items">
+                                    <p>No hay POIs creados</p>
+                                    <small>Haz clic en "Nuevo POI" para comenzar</small>
+                                </div>
+                            <?php else: ?>
+                                <?php foreach ($pois_data as $poi): ?>
+                                    <div class="poi-item" data-poi-id="<?php echo $poi['id']; ?>" data-poi-lat="<?php echo $poi['lat']; ?>" data-poi-lng="<?php echo $poi['lng']; ?>">
+                                        <div class="poi-icon">
+                                            <?php if($poi['logo_url']): ?>
+                                                <img src="<?php echo esc_url($poi['logo_url']); ?>" style="width:24px; height:24px; border-radius:50%; object-fit:cover;">
+                                            <?php else: ?>
+                                                <span class="dashicons dashicons-location" style="color: <?php echo $poi['color']; ?>"></span>
+                                            <?php endif; ?>
+                                        </div>
+                                        <div class="poi-info">
+                                            <strong><?php echo esc_html($poi['title']); ?></strong>
+                                            <small><?php echo ($poi['lat'] && $poi['lng']) ? '📍 Ubicado' : '⚠️ Sin ubicación'; ?></small>
+                                        </div>
+                                        <div class="poi-actions">
+                                            <button type="button" class="btn-locate-poi" title="Ubicar en mapa">📍</button>
+                                            <button type="button" class="btn-edit-poi" title="Editar POI">✏️</button>
+                                            <button type="button" class="btn-delete-poi" title="Eliminar POI">🗑️</button>
+                                        </div>
+                                    </div>
+                                <?php endforeach; ?>
+                            <?php endif; ?>
+                        </div>
                     </div>
                 </div>
 
@@ -167,7 +244,7 @@ class Masterplan_Project_Editor
 
                     <!-- Controles del editor -->
                     <div class="editor-controls">
-                        <div class="control-group">
+                        <div class="control-group" id="controls-lots">
                             <button type="button" id="btn-draw-polygon" class="button" disabled>
                                 🎨 Dibujar Polígono
                             </button>
@@ -177,6 +254,10 @@ class Masterplan_Project_Editor
                             <button type="button" id="btn-save-polygon" class="button button-primary" disabled>
                                 💾 Guardar
                             </button>
+                        </div>
+                        <div class="control-group" id="controls-pois" style="display:none;">
+                            <span class="dashicons dashicons-info"></span>
+                            <span id="poi-mode-status">Haz clic en el mapa para ubicar el POI</span>
                         </div>
                         <div class="control-info">
                             <span id="editor-status">Selecciona un lote para dibujar</span>
@@ -227,6 +308,73 @@ class Masterplan_Project_Editor
                         <div class="form-actions">
                             <button type="button" class="button modal-close">Cancelar</button>
                             <button type="submit" class="button button-primary">Crear Lote</button>
+                        </div>
+                    </form>
+                </div>
+            </div>
+
+            <!-- Modal para POI -->
+            <div id="poi-modal" class="modal-overlay" style="display: none;">
+                <div class="modal-content">
+                    <div class="modal-header">
+                        <h2 id="poi-modal-title">🚩 Crear/Editar POI</h2>
+                        <button type="button" class="modal-close">&times;</button>
+                    </div>
+                    <form id="poi-form">
+                        <input type="hidden" name="project_id" value="<?php echo $project_id; ?>">
+                        <input type="hidden" name="poi_id" id="poi_id">
+
+                        <div class="form-row">
+                            <label for="poi_title">Título del Punto de Interés *</label>
+                            <input type="text" id="poi_title" name="title" required placeholder="Ej: Entrada Principal, Parque...">
+                        </div>
+
+                        <div class="form-row">
+                            <label for="poi_description">Descripción</label>
+                            <textarea id="poi_description" name="description" rows="3"></textarea>
+                        </div>
+
+                        <div class="form-row">
+                            <label for="poi_logo">Logo / Icono</label>
+                            <div style="display:flex; gap:10px; align-items:center;">
+                                <input type="hidden" id="poi_logo_id" name="logo_id">
+                                <button type="button" class="button" id="btn-upload-logo">Subir Imagen</button>
+                                <div id="poi-logo-preview" style="width:40px; height:40px; border:1px solid #ddd; border-radius:4px; display:none; background-size:cover; background-position:center;"></div>
+                                <button type="button" class="button-link delete-logo" style="display:none; color:#a00;">Quitar</button>
+                            </div>
+                        </div>
+
+                        <div class="form-row" style="display:flex; gap:15px;">
+                            <div style="flex:1;">
+                                <label for="poi_lat">Latitud</label>
+                                <input type="text" id="poi_lat" name="lat" readonly style="background:#f0f0f1;">
+                            </div>
+                            <div style="flex:1;">
+                                <label for="poi_lng">Longitud</label>
+                                <input type="text" id="poi_lng" name="lng" readonly style="background:#f0f0f1;">
+                            </div>
+                        </div>
+                        <p class="description" style="margin-top:-10px; margin-bottom:15px; font-size:11px; color:#666;">
+                            Haz clic en "Ubicar en mapa" después de guardar para ajustar la posición, o arrastra el marcador si ya existe.
+                        </p>
+
+                        <div class="form-row">
+                            <label for="poi_viz_type">Tipo de Visualización</label>
+                            <select id="poi_viz_type" name="viz_type">
+                                <option value="icon">Icono (Logo)</option>
+                                <option value="billboard">Cartel Flotante</option>
+                                <option value="sphere">Esfera 3D</option>
+                            </select>
+                        </div>
+
+                        <div class="form-row">
+                            <label for="poi_color">Color de Resalte</label>
+                            <input type="color" id="poi_color" name="color" value="#3b82f6" style="width:100%; height:30px;">
+                        </div>
+
+                        <div class="form-actions">
+                            <button type="button" class="button modal-close">Cancelar</button>
+                            <button type="submit" class="button button-primary">Guardar POI</button>
                         </div>
                     </form>
                 </div>
@@ -298,17 +446,45 @@ class Masterplan_Project_Editor
             flex-direction: column;
         }
 
-        .lots-panel .panel-header {
-            padding: 15px;
-            border-bottom: 1px solid #eee;
+        .panel-header-tabs {
             display: flex;
-            justify-content: space-between;
-            align-items: center;
+            border-bottom: 1px solid #eee;
         }
 
-        .lots-panel .panel-header h3 {
-            margin: 0;
-            font-size: 14px;
+        .tab-item {
+            flex: 1;
+            text-align: center;
+            padding: 15px;
+            cursor: pointer;
+            font-weight: 600;
+            color: #666;
+            background: #f9f9f9;
+        }
+
+        .tab-item:first-child {
+            border-top-left-radius: 8px;
+        }
+
+        .tab-item:last-child {
+            border-top-right-radius: 8px;
+        }
+
+        .tab-item.active {
+            background: white;
+            color: #667eea;
+            border-bottom: 2px solid #667eea;
+        }
+
+        .panel-actions {
+            padding: 10px;
+            border-bottom: 1px solid #eee;
+        }
+
+        .tab-content {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
         }
 
         .lots-list {
@@ -317,7 +493,8 @@ class Masterplan_Project_Editor
             padding: 10px;
         }
 
-        .lot-item {
+        /* LOT ITEMS */
+        .lot-item, .poi-item {
             display: flex;
             align-items: center;
             gap: 10px;
@@ -329,11 +506,11 @@ class Masterplan_Project_Editor
             transition: all 0.2s;
         }
 
-        .lot-item:hover {
+        .lot-item:hover, .poi-item:hover {
             background: #e9ecef;
         }
 
-        .lot-item.active {
+        .lot-item.active, .poi-item.active {
             background: #667eea;
             color: white;
         }
@@ -349,18 +526,18 @@ class Masterplan_Project_Editor
             flex-shrink: 0;
         }
 
-        .lot-info {
+        .lot-info, .poi-info {
             flex: 1;
             display: flex;
             flex-direction: column;
             gap: 2px;
         }
 
-        .lot-info strong {
+        .lot-info strong, .poi-info strong {
             font-size: 13px;
         }
 
-        .lot-info small {
+        .lot-info small, .poi-info small {
             font-size: 11px;
             opacity: 0.7;
         }
@@ -371,13 +548,12 @@ class Masterplan_Project_Editor
             font-weight: 600;
         }
 
-        .lot-actions {
+        .lot-actions, .poi-actions {
             display: flex;
             gap: 5px;
         }
 
-        .lot-actions button,
-        .lot-actions a {
+        .lot-actions button, .lot-actions a, .poi-actions button {
             background: none;
             border: none;
             cursor: pointer;
@@ -387,12 +563,11 @@ class Masterplan_Project_Editor
             text-decoration: none;
         }
 
-        .lot-actions button:hover,
-        .lot-actions a:hover {
+        .lot-actions button:hover, .lot-actions a:hover, .poi-actions button:hover {
             opacity: 1;
         }
 
-        .no-lots {
+        .no-items {
             text-align: center;
             padding: 40px 20px;
             color: #666;
@@ -513,7 +688,7 @@ class Masterplan_Project_Editor
             color: #333;
         }
 
-        #new-lot-form {
+        #new-lot-form, #poi-form {
             padding: 20px;
         }
 
@@ -529,7 +704,8 @@ class Masterplan_Project_Editor
         }
 
         .form-row input,
-        .form-row select {
+        .form-row select,
+        .form-row textarea {
             width: 100%;
             padding: 10px;
             border: 1px solid #ddd;
@@ -551,6 +727,7 @@ class Masterplan_Project_Editor
         var masterplanEditorData = {
             projectId: <?php echo $project_id; ?>,
             lots: <?php echo json_encode($lots_data); ?>,
+            pois: <?php echo json_encode($pois_data); ?>,
             useCustomImage: <?php echo $use_custom_image == '1' ? 'true' : 'false'; ?>,
             customImageUrl: '<?php echo esc_js($custom_image_url); ?>',
             centerLat: <?php echo floatval($center_lat); ?>,
@@ -735,6 +912,93 @@ class Masterplan_Project_Editor
             'message' => 'Polígono guardado exitosamente',
             'lot_id' => $lot_id
         ));
+    }
+
+    /**
+     * AJAX: Guardar POI
+     */
+    public function save_poi()
+    {
+        check_ajax_referer('masterplan_admin_nonce', 'nonce');
+
+        if (!current_user_can('manage_options')) {
+            wp_send_json_error(array('message' => 'Permisos insuficientes'));
+        }
+
+        $project_id = isset($_POST['project_id']) ? absint($_POST['project_id']) : 0;
+        $poi_id = isset($_POST['poi_id']) ? absint($_POST['poi_id']) : 0;
+        $title = isset($_POST['title']) ? sanitize_text_field($_POST['title']) : '';
+        $description = isset($_POST['description']) ? sanitize_textarea_field($_POST['description']) : '';
+        $lat = isset($_POST['lat']) ? sanitize_text_field($_POST['lat']) : '';
+        $lng = isset($_POST['lng']) ? sanitize_text_field($_POST['lng']) : '';
+        $logo_id = isset($_POST['logo_id']) ? absint($_POST['logo_id']) : 0;
+        $viz_type = isset($_POST['viz_type']) ? sanitize_text_field($_POST['viz_type']) : 'icon';
+        $color = isset($_POST['color']) ? sanitize_hex_color($_POST['color']) : '#3b82f6';
+
+        if (!$title || !$project_id) {
+            wp_send_json_error(array('message' => 'Datos incompletos'));
+        }
+
+        // Crear o actualizar post
+        $post_data = array(
+            'post_type' => 'masterplan_poi',
+            'post_title' => $title,
+            'post_excerpt' => $description,
+            'post_status' => 'publish'
+        );
+
+        if ($poi_id) {
+            $post_data['ID'] = $poi_id;
+            wp_update_post($post_data);
+        } else {
+            $poi_id = wp_insert_post($post_data);
+            if (is_wp_error($poi_id)) {
+                wp_send_json_error(array('message' => 'Error al guardar POI'));
+            }
+        }
+
+        // Guardar meta
+        update_post_meta($poi_id, '_poi_project_id', $project_id);
+        update_post_meta($poi_id, '_poi_lat', $lat);
+        update_post_meta($poi_id, '_poi_lng', $lng);
+        update_post_meta($poi_id, '_poi_viz_type', $viz_type);
+        update_post_meta($poi_id, '_poi_color', $color);
+        update_post_meta($poi_id, '_thumbnail_id', $logo_id);
+
+        wp_send_json_success(array(
+            'message' => 'POI guardado exitosamente',
+            'poi' => array(
+                'id' => $poi_id,
+                'title' => $title,
+                'lat' => $lat,
+                'lng' => $lng,
+                'viz_type' => $viz_type,
+                'color' => $color,
+                'logo_url' => $logo_id ? wp_get_attachment_url($logo_id) : ''
+            )
+        ));
+    }
+
+    /**
+     * AJAX: Eliminar POI
+     */
+    public function delete_poi()
+    {
+        check_ajax_referer('masterplan_admin_nonce', 'nonce');
+
+        if (!current_user_can('manage_options')) {
+            wp_send_json_error(array('message' => 'Permisos insuficientes'));
+        }
+
+        $poi_id = isset($_POST['poi_id']) ? absint($_POST['poi_id']) : 0;
+
+        if (!$poi_id) {
+            wp_send_json_error(array('message' => 'ID inválido'));
+        }
+
+        wp_delete_post($poi_id, true);
+
+        wp_send_json_success(array('message' => 'POI eliminado'));
     }
 
     /**
