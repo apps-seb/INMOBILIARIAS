@@ -63,20 +63,6 @@ class Masterplan_API
             ),
         ));
 
-        // Endpoint para obtener POIs de un proyecto
-        register_rest_route('masterplan/v1', '/projects/(?P<project_id>\d+)/pois', array(
-            'methods' => 'GET',
-            'callback' => array($this, 'get_project_pois'),
-            'permission_callback' => '__return_true',
-            'args' => array(
-                'project_id' => array(
-                    'required' => true,
-                    'type' => 'integer',
-                    'sanitize_callback' => 'absint',
-                ),
-            ),
-        ));
-
         // Endpoint para el formulario de contacto
         register_rest_route('masterplan/v1', '/contact', array(
             'methods' => 'POST',
@@ -304,53 +290,6 @@ class Masterplan_API
             'coordinates' => $polygon ? json_decode($polygon->coordinates, true) : null,
             'project' => $project_data,
         );
-
-        return rest_ensure_response($result);
-    }
-
-    /**
-     * Obtener POIs de un proyecto
-     */
-    public function get_project_pois($request)
-    {
-        $project_id = $request->get_param('project_id');
-
-        $args = array(
-            'post_type' => 'masterplan_poi',
-            'posts_per_page' => -1,
-            'post_status' => 'publish',
-            'meta_query' => array(
-                array(
-                    'key' => '_poi_project_id',
-                    'value' => $project_id,
-                )
-            )
-        );
-
-        $pois = get_posts($args);
-        $result = array();
-
-        foreach ($pois as $poi) {
-            $poi_id = $poi->ID;
-
-            // Obtener logo
-            $logo_url = '';
-            if (has_post_thumbnail($poi_id)) {
-                $logo_url = get_the_post_thumbnail_url($poi_id, 'full');
-            }
-
-            $result[] = array(
-                'id' => $poi_id,
-                'title' => get_the_title($poi_id),
-                'description' => get_the_excerpt($poi_id),
-                'lat' => floatval(get_post_meta($poi_id, '_poi_lat', true)),
-                'lng' => floatval(get_post_meta($poi_id, '_poi_lng', true)),
-                'alt' => floatval(get_post_meta($poi_id, '_poi_alt', true)),
-                'logo' => $logo_url,
-                'viz_type' => get_post_meta($poi_id, '_poi_viz_type', true),
-                'color' => get_post_meta($poi_id, '_poi_color', true),
-            );
-        }
 
         return rest_ensure_response($result);
     }

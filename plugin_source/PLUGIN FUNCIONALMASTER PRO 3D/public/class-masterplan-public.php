@@ -264,6 +264,7 @@ class Masterplan_Public
             array(),
             MASTERPLAN_VERSION
         );
+
     }
 
     /**
