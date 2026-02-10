@@ -214,14 +214,6 @@ class Masterplan_Public
 
             <!-- Overlay -->
             <div id="masterplan-overlay" class="masterplan-overlay"></div>
-
-            <!-- Control de Visibilidad de POIs -->
-            <div id="poi-visibility-control" class="poi-visibility-control" style="display:none;">
-                <label>
-                    <input type="checkbox" id="toggle-pois" checked>
-                    Mostrar Puntos de Interés
-                </label>
-            </div>
         </div>
 
         <script>
@@ -273,13 +265,6 @@ class Masterplan_Public
             MASTERPLAN_VERSION
         );
 
-        // Estilos del control POI
-        wp_enqueue_style(
-            'masterplan-viewer-poi',
-            MASTERPLAN_PLUGIN_URL . 'public/css/viewer-poi-control.css',
-            array('masterplan-viewer'),
-            MASTERPLAN_VERSION
-        );
     }
 
     /**
