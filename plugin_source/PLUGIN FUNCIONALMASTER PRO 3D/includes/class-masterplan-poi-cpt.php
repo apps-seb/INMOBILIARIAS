@@ -42,7 +42,7 @@ class Masterplan_POI_CPT
             'public' => true,
             'publicly_queryable' => true,
             'show_ui' => true,
-            'show_in_menu' => 'masterplan-settings', // Submenú de MasterPlan 3D
+            'show_in_menu' => false, // Ocultar del menú (gestión solo desde Editor de Proyectos)
             'query_var' => true,
             'rewrite' => array('slug' => 'poi'),
             'capability_type' => 'post',

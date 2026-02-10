@@ -374,7 +374,7 @@ class Masterplan_Project_Editor
 
                         <div class="form-actions">
                             <button type="button" class="button modal-close">Cancelar</button>
-                            <button type="submit" class="button button-primary">Guardar POI</button>
+                            <button type="submit" class="button button-primary">💾 Guardar y Publicar POI</button>
                         </div>
                     </form>
                 </div>
@@ -939,12 +939,12 @@ class Masterplan_Project_Editor
             wp_send_json_error(array('message' => 'Datos incompletos'));
         }
 
-        // Crear o actualizar post
+        // Crear o actualizar post - Asegurando que siempre esté publicado y visible
         $post_data = array(
             'post_type' => 'masterplan_poi',
             'post_title' => $title,
             'post_excerpt' => $description,
-            'post_status' => 'publish'
+            'post_status' => 'publish' // Forzar publicación
         );
 
         if ($poi_id) {

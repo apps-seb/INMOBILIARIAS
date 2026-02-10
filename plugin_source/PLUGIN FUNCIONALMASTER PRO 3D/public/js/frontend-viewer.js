@@ -13,6 +13,7 @@ jQuery(document).ready(function ($) {
     let backgroundImage = null;
     let lotsData = [];
     let poisData = [];
+    let poisVisible = true;
 
     // Configuración del proyecto (inyectada por PHP)
     const projectConfig = window.masterplanProjectConfig || {};
@@ -23,11 +24,37 @@ jQuery(document).ready(function ($) {
      * Inicializar viewer según modo
      */
     function init() {
+        // Inicializar control de visibilidad
+        initVisibilityControl();
+
         if (useCustomImage && projectConfig.customImageUrl) {
             initImageViewer();
         } else if ($('#masterplan-public-map').length) {
             initMap();
         }
+    }
+
+    function initVisibilityControl() {
+        const $control = $('#poi-visibility-control');
+        const $checkbox = $('#toggle-pois');
+
+        // Mostrar control
+        $control.show();
+
+        // Evento cambio
+        $checkbox.on('change', function() {
+            poisVisible = $(this).is(':checked');
+            if (useCustomImage) {
+                redrawCanvas();
+            } else if (map) {
+                toggleMapPOIs(poisVisible);
+            }
+        });
+    }
+
+    function toggleMapPOIs(visible) {
+        const display = visible ? 'block' : 'none';
+        $('.poi-marker-container').css('display', display);
     }
 
     // ========================================
@@ -153,8 +180,8 @@ jQuery(document).ready(function ($) {
             drawLotOnCanvas(lot);
         });
 
-        // Dibujar POIs
-        if (typeof poisData !== 'undefined' && poisData.length > 0) {
+        // Dibujar POIs (si están visibles)
+        if (poisVisible && typeof poisData !== 'undefined' && poisData.length > 0) {
             drawPOIsOnCanvas();
         }
     }
@@ -268,8 +295,8 @@ jQuery(document).ready(function ($) {
         const drawWidth = parseFloat(canvas.dataset.drawWidth);
         const drawHeight = parseFloat(canvas.dataset.drawHeight);
 
-        // Buscar POI clickeado (prioridad sobre lotes)
-        if (typeof poisData !== 'undefined') {
+        // Buscar POI clickeado (prioridad sobre lotes, si están visibles)
+        if (poisVisible && typeof poisData !== 'undefined') {
             const clickedPOI = poisData.find(poi => {
                 if (poi.lat === null || poi.lng === null) return false;
 
@@ -353,11 +380,17 @@ jQuery(document).ready(function ($) {
             type: 'GET',
             success: function (pois) {
                 poisData = pois;
+                console.log('MasterPlan: POIs loaded', poisData); // Debug
 
                 if (useCustomImage && canvas) {
                     // Precargar logos si existen
                     let toLoad = 0;
                     let loaded = 0;
+
+                    if (poisData.length === 0) {
+                        redrawCanvas();
+                        return;
+                    }
 
                     poisData.forEach(poi => {
                         if (poi.logo) {
@@ -369,6 +402,7 @@ jQuery(document).ready(function ($) {
                                 if (loaded === toLoad) redrawCanvas();
                             };
                             img.onerror = function() {
+                                console.warn('MasterPlan: Error loading POI logo', poi.logo);
                                 loaded++; // Continuar aunque falle
                                 if (loaded === toLoad) redrawCanvas();
                             };
@@ -383,8 +417,8 @@ jQuery(document).ready(function ($) {
                     displayPOIsOnMap(pois);
                 }
             },
-            error: function () {
-                console.error('Error al cargar POIs');
+            error: function (xhr, status, error) {
+                console.error('MasterPlan: Error loading POIs', error);
             }
         });
     }
