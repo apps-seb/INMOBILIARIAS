@@ -241,11 +241,44 @@ jQuery(document).ready(function ($) {
 
         const el = document.createElement('div');
         el.className = 'poi-marker-admin';
-        el.innerHTML = '📍';
-        el.style.cssText = 'font-size: 24px; cursor: pointer;';
+        el.style.cssText = 'cursor: pointer; position: relative;';
         el.title = poi.title;
 
-        const marker = new maplibregl.Marker(el)
+        let content = '';
+        const style = poi.marker_style || 'icon';
+        const imageUrl = poi.marker_image || '';
+
+        if (imageUrl) {
+            content = `<img src="${imageUrl}" style="width: 30px; height: auto; display: block; margin: 0 auto;">`;
+        } else {
+            content = '<div style="font-size: 24px;">📍</div>';
+        }
+
+        if (style === 'line') {
+            el.innerHTML = `
+                <div style="display: flex; flex-direction: column; align-items: center; transform: translateY(-100%);">
+                    ${content}
+                    <div style="width: 2px; height: 30px; background: white; border: 1px solid black;"></div>
+                    <div style="width: 6px; height: 6px; background: black; border-radius: 50%;"></div>
+                </div>
+            `;
+        } else if (style === 'flag') {
+            el.innerHTML = `
+                <div style="display: flex; flex-direction: column; align-items: flex-start; transform: translate(2px, -100%);">
+                    ${content}
+                    <div style="width: 2px; height: 40px; background: black;"></div>
+                </div>
+            `;
+        } else {
+            // Icon simple
+            el.innerHTML = `
+                <div style="transform: translate(-50%, -100%); text-align: center;">
+                    ${content}
+                </div>
+            `;
+        }
+
+        const marker = new maplibregl.Marker({ element: el, anchor: 'bottom' })
             .setLngLat([parseFloat(poi.lng), parseFloat(poi.lat)])
             .addTo(map);
 
@@ -363,21 +396,100 @@ jQuery(document).ready(function ($) {
         const drawWidth = parseFloat(canvas.dataset.drawWidth);
         const drawHeight = parseFloat(canvas.dataset.drawHeight);
 
-        const x = offsetX + (parseFloat(poi.lng) * drawWidth); // X = Lng
-        const y = offsetY + (parseFloat(poi.lat) * drawHeight); // Y = Lat
+        const x = offsetX + (parseFloat(poi.lng) * drawWidth);
+        const y = offsetY + (parseFloat(poi.lat) * drawHeight);
 
-        ctx.font = '24px Arial';
-        ctx.textAlign = 'center';
-        ctx.textBaseline = 'bottom';
-        ctx.fillText('📍', x, y);
+        const style = poi.marker_style || 'icon';
+        const imageUrl = poi.marker_image || '';
 
-        if (!isTemp) {
-            ctx.font = '12px Arial';
-            ctx.fillStyle = 'white';
+        // Si hay imagen, intentar dibujarla
+        if (imageUrl) {
+            const img = new Image();
+            img.src = imageUrl;
+            // Si la imagen ya está cargada (cache), dibujar inmediatamente
+            if (img.complete) {
+                drawPoiContent(ctx, x, y, style, img, poi.title, isTemp);
+            } else {
+                img.onload = function() {
+                    // Redraw solo si sigue siendo válido (simplificado para editor)
+                    if (activeTab === 'pois') redrawCanvas();
+                };
+            }
+        } else {
+            drawPoiContent(ctx, x, y, style, null, poi.title, isTemp);
+        }
+    }
+
+    function drawPoiContent(ctx, x, y, style, img, title, isTemp) {
+        ctx.save();
+
+        let contentHeight = 30; // Altura aproximada del contenido
+
+        if (style === 'line') {
+            const lineHeight = 30;
+            ctx.beginPath();
+            ctx.moveTo(x, y);
+            ctx.lineTo(x, y - lineHeight);
+            ctx.strokeStyle = 'white';
+            ctx.lineWidth = 3;
+            ctx.stroke();
+            ctx.strokeStyle = 'black';
+            ctx.lineWidth = 1;
+            ctx.stroke();
+
+            // Punto base
+            ctx.beginPath();
+            ctx.arc(x, y, 3, 0, Math.PI*2);
+            ctx.fillStyle = 'black';
+            ctx.fill();
+
+            // Dibujar contenido arriba
+            drawIconOrText(ctx, x, y - lineHeight, img);
+            contentHeight += lineHeight;
+
+        } else if (style === 'flag') {
+            const poleHeight = 40;
+            ctx.beginPath();
+            ctx.moveTo(x, y);
+            ctx.lineTo(x, y - poleHeight);
             ctx.strokeStyle = 'black';
             ctx.lineWidth = 2;
-            ctx.strokeText(poi.title, x, y - 25);
-            ctx.fillText(poi.title, x, y - 25);
+            ctx.stroke();
+
+            // Dibujar contenido a la derecha
+            drawIconOrText(ctx, x + 15, y - poleHeight + 10, img);
+
+        } else {
+            // Simple Icon (Anchored bottom center)
+            drawIconOrText(ctx, x, y, img);
+        }
+
+        if (!isTemp && title) {
+            ctx.font = 'bold 12px Arial';
+            ctx.textAlign = 'center';
+            ctx.textBaseline = 'bottom';
+            ctx.fillStyle = 'white';
+            ctx.strokeStyle = 'black';
+            ctx.lineWidth = 3;
+            ctx.strokeText(title, x, y - contentHeight - 5);
+            ctx.fillText(title, x, y - contentHeight - 5);
+        }
+
+        ctx.restore();
+    }
+
+    function drawIconOrText(ctx, x, y, img) {
+        if (img && img.complete && img.naturalWidth > 0) {
+            const w = 30;
+            const h = (img.naturalHeight / img.naturalWidth) * w;
+            // Anchor bottom center: x - w/2, y - h
+            ctx.drawImage(img, x - w/2, y - h, w, h);
+        } else {
+            ctx.font = '24px Arial';
+            ctx.textAlign = 'center';
+            ctx.textBaseline = 'bottom';
+            ctx.fillStyle = 'red';
+            ctx.fillText('📍', x, y);
         }
     }
 

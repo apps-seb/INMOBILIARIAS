@@ -190,6 +190,9 @@ class Masterplan_CPT
         $poi_type = get_post_meta($post->ID, '_poi_type', true);
         $poi_lat = get_post_meta($post->ID, '_poi_lat', true);
         $poi_lng = get_post_meta($post->ID, '_poi_lng', true);
+        $poi_style = get_post_meta($post->ID, '_poi_marker_style', true) ?: 'icon';
+        $poi_image_id = get_post_meta($post->ID, '_poi_marker_image_id', true);
+        $poi_image_url = $poi_image_id ? wp_get_attachment_url($poi_image_id) : '';
 ?>
         <table class="form-table">
             <tr>
@@ -201,6 +204,66 @@ class Masterplan_CPT
                         <option value="facility" <?php selected($poi_type, 'facility'); ?>>🏢 Instalación / Amenidad</option>
                         <option value="entrance" <?php selected($poi_type, 'entrance'); ?>>🚪 Acceso / Portería</option>
                     </select>
+                </td>
+            </tr>
+            <tr>
+                <th><label for="poi_marker_style">Estilo del Marcador</label></th>
+                <td>
+                    <select id="poi_marker_style" name="poi_marker_style">
+                        <option value="icon" <?php selected($poi_style, 'icon'); ?>>📍 Icono Simple (Centro-Abajo)</option>
+                        <option value="line" <?php selected($poi_style, 'line'); ?>>📏 Línea Vertical con Icono</option>
+                        <option value="flag" <?php selected($poi_style, 'flag'); ?>>🚩 Bandera / Asta</option>
+                    </select>
+                    <p class="description">Define cómo se visualiza el marcador en el mapa/imagen.</p>
+                </td>
+            </tr>
+            <tr>
+                <th><label>Icono Personalizado</label></th>
+                <td>
+                    <div style="margin-bottom: 10px;">
+                        <?php if ($poi_image_url): ?>
+                            <img src="<?php echo esc_url($poi_image_url); ?>" style="max-width: 50px; display: block; margin-bottom: 5px;" id="poi_marker_preview">
+                        <?php else: ?>
+                            <img src="" style="max-width: 50px; display: none; margin-bottom: 5px;" id="poi_marker_preview">
+                        <?php endif; ?>
+                    </div>
+                    <input type="hidden" id="poi_marker_image_id" name="poi_marker_image_id" value="<?php echo esc_attr($poi_image_id); ?>">
+                    <button type="button" class="button" id="upload_marker_image_btn"><?php echo $poi_image_id ? 'Cambiar Icono' : 'Subir Icono'; ?></button>
+                    <button type="button" class="button" id="remove_marker_image_btn" style="<?php echo $poi_image_id ? '' : 'display:none;'; ?>">Eliminar</button>
+                    <p class="description">Sube un icono o logo (PNG transparente recomendado). Si no se sube, se usará el emoji por defecto.</p>
+
+                    <script>
+                    jQuery(document).ready(function($){
+                        var mediaUploader;
+                        $('#upload_marker_image_btn').click(function(e) {
+                            e.preventDefault();
+                            if (mediaUploader) {
+                                mediaUploader.open();
+                                return;
+                            }
+                            mediaUploader = wp.media.frames.file_frame = wp.media({
+                                title: 'Seleccionar Icono del Marcador',
+                                button: { text: 'Usar este icono' },
+                                multiple: false
+                            });
+                            mediaUploader.on('select', function() {
+                                var attachment = mediaUploader.state().get('selection').first().toJSON();
+                                $('#poi_marker_image_id').val(attachment.id);
+                                $('#poi_marker_preview').attr('src', attachment.url).show();
+                                $('#upload_marker_image_btn').text('Cambiar Icono');
+                                $('#remove_marker_image_btn').show();
+                            });
+                            mediaUploader.open();
+                        });
+                        $('#remove_marker_image_btn').click(function(e){
+                            e.preventDefault();
+                            $('#poi_marker_image_id').val('');
+                            $('#poi_marker_preview').hide();
+                            $('#upload_marker_image_btn').text('Subir Icono');
+                            $(this).hide();
+                        });
+                    });
+                    </script>
                 </td>
             </tr>
             <tr>
@@ -398,6 +461,12 @@ class Masterplan_CPT
         if ($post_type === 'masterplan_poi') {
             if (isset($_POST['poi_type'])) {
                 update_post_meta($post_id, '_poi_type', sanitize_text_field($_POST['poi_type']));
+            }
+            if (isset($_POST['poi_marker_style'])) {
+                update_post_meta($post_id, '_poi_marker_style', sanitize_text_field($_POST['poi_marker_style']));
+            }
+            if (isset($_POST['poi_marker_image_id'])) {
+                update_post_meta($post_id, '_poi_marker_image_id', absint($_POST['poi_marker_image_id']));
             }
             if (isset($_POST['poi_lat'])) {
                 update_post_meta($post_id, '_poi_lat', sanitize_text_field($_POST['poi_lat']));

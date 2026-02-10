@@ -50,71 +50,28 @@
     white-space: nowrap;
 }
 
-/* POI Markers (Stalk Style) */
-.poi-marker-container {
-    position: relative;
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    justify-content: flex-end; /* Anchor at bottom */
-    width: 100px; /* Width for label */
-    height: 150px; /* Total height including stalk */
-    pointer-events: none; /* Let clicks pass to children */
-}
-
-.poi-content {
-    display: flex;
-    flex-direction: column;
-    align-items: center;
+/* POI Markers - MapLibre */
+.poi-marker-frontend {
     pointer-events: auto;
-    cursor: pointer;
-    margin-bottom: -2px; /* Connect to stalk */
-    transition: transform 0.2s ease;
+    transition: transform 0.2s;
 }
 
-.poi-content:hover {
+.poi-marker-frontend:hover {
     transform: scale(1.1);
-    z-index: 20;
+    z-index: 1000 !important;
 }
 
-.poi-icon {
-    width: 40px;
-    height: 40px;
-    background-size: cover;
-    background-position: center;
-    border-radius: 50%;
-    border: 2px solid white;
-    box-shadow: 0 2px 8px rgba(0,0,0,0.3);
-    background-color: white;
-    margin-bottom: 5px;
+/* Specific POI Styles inside marker container */
+.poi-style-line {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
 }
 
-.poi-label {
-    background: rgba(0, 0, 0, 0.6);
-    color: white;
-    padding: 4px 8px;
-    border-radius: 4px;
-    font-size: 12px;
-    white-space: nowrap;
-    text-shadow: 0 1px 2px rgba(0,0,0,0.8);
-    margin-bottom: 5px;
-}
-
-.poi-stalk {
-    width: 2px;
-    height: 100%; /* Fills remaining space */
-    background: white;
-    box-shadow: 0 0 4px rgba(0,0,0,0.5);
-    flex-grow: 1;
-}
-
-.poi-anchor {
-    width: 8px;
-    height: 8px;
-    background: white;
-    border-radius: 50%;
-    box-shadow: 0 0 4px rgba(0,0,0,0.5);
-    margin-top: -4px; /* Center on stalk end */
+.poi-style-flag {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
 }
 
 /* Animación Pulse */

@@ -96,10 +96,13 @@ class Masterplan_Project_Editor
 
         $pois_data = array();
         foreach ($pois as $poi) {
+            $image_id = get_post_meta($poi->ID, '_poi_marker_image_id', true);
             $pois_data[] = array(
                 'id' => $poi->ID,
                 'title' => $poi->post_title,
                 'type' => get_post_meta($poi->ID, '_poi_type', true) ?: 'info',
+                'marker_style' => get_post_meta($poi->ID, '_poi_marker_style', true) ?: 'icon',
+                'marker_image' => $image_id ? wp_get_attachment_url($image_id) : '',
                 'lat' => get_post_meta($poi->ID, '_poi_lat', true),
                 'lng' => get_post_meta($poi->ID, '_poi_lng', true),
                 'thumbnail' => get_the_post_thumbnail_url($poi->ID, 'thumbnail')
@@ -339,6 +342,59 @@ class Masterplan_Project_Editor
                                 <option value="entrance">🚪 Acceso / Portería</option>
                             </select>
                         </div>
+
+                        <div class="form-row">
+                            <label for="new_poi_marker_style">Estilo del Marcador</label>
+                            <select id="new_poi_marker_style" name="marker_style">
+                                <option value="icon">📍 Icono Simple (Centro-Abajo)</option>
+                                <option value="line">📏 Línea Vertical con Icono</option>
+                                <option value="flag">🚩 Bandera / Asta</option>
+                            </select>
+                        </div>
+
+                        <div class="form-row">
+                            <label>Icono Personalizado</label>
+                            <div style="margin-bottom: 10px;">
+                                <img src="" style="max-width: 50px; display: none; margin-bottom: 5px;" id="new_poi_marker_preview">
+                            </div>
+                            <input type="hidden" id="new_poi_marker_image_id" name="marker_image_id" value="">
+                            <button type="button" class="button" id="new_upload_marker_image_btn">Subir Icono</button>
+                            <button type="button" class="button" id="new_remove_marker_image_btn" style="display:none;">Eliminar</button>
+                            <p class="description">Si no se sube, se usará el emoji por defecto.</p>
+                        </div>
+
+                        <script>
+                        jQuery(document).ready(function($){
+                            var newMediaUploader;
+                            $('#new_upload_marker_image_btn').click(function(e) {
+                                e.preventDefault();
+                                if (newMediaUploader) {
+                                    newMediaUploader.open();
+                                    return;
+                                }
+                                newMediaUploader = wp.media.frames.file_frame = wp.media({
+                                    title: 'Seleccionar Icono del Marcador',
+                                    button: { text: 'Usar este icono' },
+                                    multiple: false
+                                });
+                                newMediaUploader.on('select', function() {
+                                    var attachment = newMediaUploader.state().get('selection').first().toJSON();
+                                    $('#new_poi_marker_image_id').val(attachment.id);
+                                    $('#new_poi_marker_preview').attr('src', attachment.url).show();
+                                    $('#new_upload_marker_image_btn').text('Cambiar Icono');
+                                    $('#new_remove_marker_image_btn').show();
+                                });
+                                newMediaUploader.open();
+                            });
+                            $('#new_remove_marker_image_btn').click(function(e){
+                                e.preventDefault();
+                                $('#new_poi_marker_image_id').val('');
+                                $('#new_poi_marker_preview').hide();
+                                $('#new_upload_marker_image_btn').text('Subir Icono');
+                                $(this).hide();
+                            });
+                        });
+                        </script>
 
                         <div class="form-actions">
                             <button type="button" class="button modal-close">Cancelar</button>
@@ -956,6 +1012,8 @@ class Masterplan_Project_Editor
         $project_id = isset($_POST['project_id']) ? absint($_POST['project_id']) : 0;
         $title = isset($_POST['title']) ? sanitize_text_field($_POST['title']) : '';
         $type = isset($_POST['type']) ? sanitize_text_field($_POST['type']) : 'info';
+        $style = isset($_POST['marker_style']) ? sanitize_text_field($_POST['marker_style']) : 'icon';
+        $image_id = isset($_POST['marker_image_id']) ? absint($_POST['marker_image_id']) : 0;
 
         if (!$project_id || !$title) {
             wp_send_json_error(array('message' => 'Datos incompletos'));
@@ -975,6 +1033,12 @@ class Masterplan_Project_Editor
         // Guardar metadatos
         update_post_meta($poi_id, '_project_id', $project_id);
         update_post_meta($poi_id, '_poi_type', $type);
+        update_post_meta($poi_id, '_poi_marker_style', $style);
+        if ($image_id) {
+            update_post_meta($poi_id, '_poi_marker_image_id', $image_id);
+        }
+
+        $image_url = $image_id ? wp_get_attachment_url($image_id) : '';
 
         wp_send_json_success(array(
             'message' => 'POI creado exitosamente',
@@ -982,6 +1046,8 @@ class Masterplan_Project_Editor
                 'id' => $poi_id,
                 'title' => $title,
                 'type' => $type,
+                'marker_style' => $style,
+                'marker_image' => $image_url,
                 'lat' => null,
                 'lng' => null
             )

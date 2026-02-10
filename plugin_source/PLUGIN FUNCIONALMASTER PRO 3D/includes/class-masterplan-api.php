@@ -205,10 +205,15 @@ class Masterplan_API
 
             if (!$lat || !$lng) continue; // Solo devolver POIs con ubicación
 
+            $marker_image_id = get_post_meta($poi->ID, '_poi_marker_image_id', true);
+            $marker_image_url = $marker_image_id ? wp_get_attachment_url($marker_image_id) : '';
+
             $result[] = array(
                 'id' => $poi->ID,
                 'title' => $poi->post_title,
                 'type' => get_post_meta($poi->ID, '_poi_type', true),
+                'marker_style' => get_post_meta($poi->ID, '_poi_marker_style', true) ?: 'icon',
+                'marker_image' => $marker_image_url,
                 'lat' => $lat,
                 'lng' => $lng,
                 'description' => get_the_excerpt($poi->ID) ?: $poi->post_content,
