@@ -36,6 +36,7 @@ class Masterplan_Core
         // Custom Post Types
         require_once MASTERPLAN_PLUGIN_DIR . 'includes/class-masterplan-cpt.php';
         require_once MASTERPLAN_PLUGIN_DIR . 'includes/class-masterplan-project-cpt.php';
+        require_once MASTERPLAN_PLUGIN_DIR . 'includes/class-masterplan-poi-cpt.php';
 
         // Email Handler
         require_once MASTERPLAN_PLUGIN_DIR . 'includes/class-masterplan-email.php';
@@ -66,6 +67,7 @@ class Masterplan_Core
         $project_editor = new Masterplan_Project_Editor();
         $cpt = new Masterplan_CPT();
         $project_cpt = new Masterplan_Project_CPT();
+        $poi_cpt = new Masterplan_POI_CPT();
 
         // Admin menu y scripts
         $this->loader->add_action('admin_menu', $admin, 'add_admin_menu');
@@ -87,6 +89,11 @@ class Masterplan_Core
         $this->loader->add_action('add_meta_boxes', $project_cpt, 'add_meta_boxes');
         $this->loader->add_action('save_post', $project_cpt, 'save_meta_boxes');
 
+        // Custom Post Type - POIs
+        $this->loader->add_action('init', $poi_cpt, 'register_post_type');
+        $this->loader->add_action('add_meta_boxes', $poi_cpt, 'add_meta_boxes');
+        $this->loader->add_action('save_post', $poi_cpt, 'save_meta_boxes');
+
         // AJAX handlers para el editor de lotes (legacy)
         $this->loader->add_action('wp_ajax_masterplan_save_polygon', $lot_editor, 'save_polygon');
         $this->loader->add_action('wp_ajax_masterplan_get_lot_data', $lot_editor, 'get_lot_data');
@@ -95,6 +102,8 @@ class Masterplan_Core
         $this->loader->add_action('wp_ajax_masterplan_create_lot', $project_editor, 'create_lot');
         $this->loader->add_action('wp_ajax_masterplan_save_lot_polygon', $project_editor, 'save_lot_polygon');
         $this->loader->add_action('wp_ajax_masterplan_search_location', $project_editor, 'search_location');
+        $this->loader->add_action('wp_ajax_masterplan_create_poi', $project_editor, 'create_poi');
+        $this->loader->add_action('wp_ajax_masterplan_save_poi_location', $project_editor, 'save_poi_location');
     }
 
     /**

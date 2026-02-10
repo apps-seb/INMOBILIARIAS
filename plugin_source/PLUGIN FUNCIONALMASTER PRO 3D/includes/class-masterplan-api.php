@@ -35,6 +35,20 @@ class Masterplan_API
             ),
         ));
 
+        // Endpoint para obtener puntos de interés de un proyecto
+        register_rest_route('masterplan/v1', '/projects/(?P<project_id>\d+)/pois', array(
+            'methods' => 'GET',
+            'callback' => array($this, 'get_project_pois'),
+            'permission_callback' => '__return_true',
+            'args' => array(
+                'project_id' => array(
+                    'required' => true,
+                    'type' => 'integer',
+                    'sanitize_callback' => 'absint',
+                ),
+            ),
+        ));
+
         // Endpoint para obtener todos los lotes (legacy + nuevo)
         register_rest_route('masterplan/v1', '/lots', array(
             'methods' => 'GET',
@@ -157,6 +171,49 @@ class Masterplan_API
     {
         $project_id = $request->get_param('project_id');
         return $this->get_lots_by_project($project_id);
+    }
+
+    /**
+     * Obtener POIs de un proyecto específico
+     */
+    public function get_project_pois($request)
+    {
+        $project_id = $request->get_param('project_id');
+
+        $pois = get_posts(array(
+            'post_type' => 'masterplan_poi',
+            'posts_per_page' => -1,
+            'post_status' => 'publish',
+            'meta_query' => array(
+                array(
+                    'key' => '_project_id',
+                    'value' => $project_id,
+                )
+            )
+        ));
+
+        $result = array();
+
+        foreach ($pois as $poi) {
+            $lat = get_post_meta($poi->ID, '_poi_lat', true);
+            $lng = get_post_meta($poi->ID, '_poi_lng', true);
+
+            // Solo incluir si tiene coordenadas
+            if ($lat === '' || $lng === '') {
+                continue;
+            }
+
+            $result[] = array(
+                'id' => $poi->ID,
+                'title' => get_the_title($poi->ID),
+                'content' => apply_filters('the_content', $poi->post_content),
+                'excerpt' => get_the_excerpt($poi->ID),
+                'thumbnail' => get_the_post_thumbnail_url($poi->ID, 'large'),
+                'coordinates' => array(floatval($lat), floatval($lng)),
+            );
+        }
+
+        return rest_ensure_response($result);
     }
 
     /**

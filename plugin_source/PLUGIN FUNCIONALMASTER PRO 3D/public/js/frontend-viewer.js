@@ -12,6 +12,7 @@ jQuery(document).ready(function ($) {
     let ctx = null;
     let backgroundImage = null;
     let lotsData = [];
+    let poisData = [];
 
     // Configuración del proyecto (inyectada por PHP)
     const projectConfig = window.masterplanProjectConfig || {};
@@ -75,6 +76,7 @@ jQuery(document).ready(function ($) {
             });
 
             loadLots();
+            loadPOIs();
         });
     }
 
@@ -149,6 +151,14 @@ jQuery(document).ready(function ($) {
             if (!lot.coordinates || lot.coordinates.length < 3) return;
             drawLotOnCanvas(lot);
         });
+
+        // Dibujar POIs
+        poisData.forEach(poi => {
+            if (!poi.coordinates) return;
+            // En modo imagen, coordinates = [Y, X]
+            // drawPoiOnCanvas espera [X, Y]
+            drawPoiOnCanvas(poi);
+        });
     }
 
     function drawLotOnCanvas(lot) {
@@ -206,6 +216,43 @@ jQuery(document).ready(function ($) {
         }
     }
 
+    function drawPoiOnCanvas(poi) {
+        const offsetX = parseFloat(canvas.dataset.offsetX);
+        const offsetY = parseFloat(canvas.dataset.offsetY);
+        const drawWidth = parseFloat(canvas.dataset.drawWidth);
+        const drawHeight = parseFloat(canvas.dataset.drawHeight);
+
+        // En imagen: lat=Y, lng=X. Coords = [Y, X]
+        const yRel = poi.coordinates[0];
+        const xRel = poi.coordinates[1];
+
+        const x = offsetX + (xRel * drawWidth);
+        const y = offsetY + (yRel * drawHeight);
+
+        // Pin color
+        const color = '#8b5cf6';
+
+        ctx.beginPath();
+        // Dibujar pin
+        ctx.moveTo(x, y);
+        ctx.lineTo(x - 12, y - 30);
+        ctx.bezierCurveTo(x - 12, y - 48, x + 12, y - 48, x + 12, y - 30);
+        ctx.lineTo(x, y);
+
+        ctx.fillStyle = color;
+        ctx.fill();
+        ctx.strokeStyle = 'white';
+        ctx.lineWidth = 2;
+        ctx.stroke();
+
+        ctx.beginPath();
+        ctx.arc(x, y - 30, 5, 0, Math.PI * 2);
+        ctx.fillStyle = 'white';
+        ctx.fill();
+
+        // Icono o texto si cabe
+    }
+
     function onCanvasClick(e) {
         const rect = canvas.getBoundingClientRect();
         const clickX = e.clientX - rect.left;
@@ -216,11 +263,30 @@ jQuery(document).ready(function ($) {
         const drawWidth = parseFloat(canvas.dataset.drawWidth);
         const drawHeight = parseFloat(canvas.dataset.drawHeight);
 
-        // Convertir a coordenadas relativas para lotes
+        // Convertir a coordenadas relativas
         const relX = (clickX - offsetX) / drawWidth;
         const relY = (clickY - offsetY) / drawHeight;
 
-        // Buscar lote clickeado
+        // 1. Verificar POIs primero (tienen prioridad)
+        // Check distance to POI (simple radius check)
+        const clickedPoi = poisData.find(poi => {
+            if (!poi.coordinates) return false;
+            // Coords: [Y, X]
+            const poiY = poi.coordinates[0];
+            const poiX = poi.coordinates[1];
+
+            // Distancia euclidiana
+            // Ajustar aspecto si es necesario, pero simple works for small pins
+            const dist = Math.sqrt(Math.pow(relX - poiX, 2) + Math.pow(relY - poiY, 2));
+            return dist < 0.03; // ~3% del ancho/alto
+        });
+
+        if (clickedPoi) {
+            openPoiSidebar(clickedPoi);
+            return;
+        }
+
+        // 2. Buscar lote clickeado
         const clickedLot = lotsData.find(lot => {
             if (!lot.coordinates || lot.coordinates.length < 3) return false;
             return isPointInPolygon([relX, relY], lot.coordinates);
@@ -419,6 +485,74 @@ jQuery(document).ready(function ($) {
                 .setLngLat(centroid)
                 .addTo(map);
         });
+    }
+
+    /**
+     * Cargar POIs desde la API
+     */
+    function loadPOIs() {
+        if (!projectId) return;
+
+        let url = masterplanPublic.apiUrl + 'projects/' + projectId + '/pois';
+
+        $.ajax({
+            url: url,
+            type: 'GET',
+            success: function (pois) {
+                poisData = pois;
+
+                if (useCustomImage && canvas) {
+                    redrawCanvas();
+                } else if (map) {
+                    displayPoisOnMap(pois);
+                }
+            },
+            error: function () {
+                console.error('Error al cargar POIs');
+            }
+        });
+    }
+
+    function displayPoisOnMap(pois) {
+        pois.forEach(poi => {
+            if (!poi.coordinates) return;
+
+            const el = document.createElement('div');
+            el.className = 'poi-marker';
+            el.innerHTML = '📍';
+            el.style.cssText = 'font-size: 24px; cursor: pointer; filter: drop-shadow(0 2px 4px rgba(0,0,0,0.3));';
+
+            // Click
+            el.addEventListener('click', (e) => {
+                e.stopPropagation();
+                openPoiSidebar(poi);
+            });
+
+            new maplibregl.Marker({ element: el, anchor: 'bottom' })
+                .setLngLat([poi.coordinates[1], poi.coordinates[0]]) // [lng, lat]
+                .addTo(map);
+        });
+    }
+
+    function openPoiSidebar(poi) {
+        const sidebarHTML = `
+            <div class="poi-detail">
+                ${poi.thumbnail ? `<img src="${poi.thumbnail}" alt="${poi.title}" class="poi-image" style="width:100%; border-radius:8px; margin-bottom:15px;">` : ''}
+
+                <div class="poi-header">
+                    <span class="poi-badge" style="background:#8b5cf6; color:white; padding:4px 8px; border-radius:4px; font-size:12px;">Punto de Interés</span>
+                    <h2 class="poi-title" style="margin-top:10px;">${poi.title}</h2>
+                </div>
+
+                <div class="poi-content" style="margin-top:15px; color:#4a5568; line-height:1.6;">
+                    ${poi.content || 'Sin descripción disponible.'}
+                </div>
+            </div>
+        `;
+
+        $('#sidebar-content').html(sidebarHTML);
+        $('#masterplan-sidebar').addClass('active');
+        $('#masterplan-overlay').addClass('active');
     }
 
     /**

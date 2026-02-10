@@ -20,6 +20,14 @@ jQuery(document).ready(function ($) {
     let selectedLotId = masterplanEditorData.selectedLotId;
     let lotsData = masterplanEditorData.lots;
 
+    // Nuevas variables para POIs
+    let currentMode = 'lot'; // 'lot' or 'poi'
+    let isPlacingPoi = false;
+    let selectedPoiId = masterplanEditorData.selectedPoiId;
+    let poisData = masterplanEditorData.pois;
+    let currentPoiLocation = null;
+    let poiMarkerTemp = null;
+
     // ========================================
     // INICIALIZACIÓN
     // ========================================
@@ -37,6 +45,13 @@ jQuery(document).ready(function ($) {
         // Seleccionar lote si viene en URL
         if (selectedLotId) {
             selectLot(selectedLotId);
+        }
+
+        // Seleccionar POI si viene en URL
+        if (selectedPoiId) {
+            // Cambiar a tab de POIs
+            $('.tab-item[data-tab="pois"]').click();
+            selectPoi(selectedPoiId);
         }
     }
 
@@ -73,12 +88,13 @@ jQuery(document).ready(function ($) {
 
             // Renderizar polígonos existentes
             renderMapPolygons();
+            renderMapPois();
 
         });
 
         // Click en mapa
         map.on('click', function (e) {
-            if (isDrawing) {
+            if (currentMode === 'lot' && isDrawing) {
                 // Lógica de dibujo de lotes
                 const point = [e.lngLat.lng, e.lngLat.lat];
                 currentPoints.push(point);
@@ -93,6 +109,9 @@ jQuery(document).ready(function ($) {
                     );
                     if (dist < 0.0001) finishDrawing();
                 }
+            } else if (currentMode === 'poi' && isPlacingPoi) {
+                // Lógica de ubicación de POI
+                placePoiMarkerMap(e.lngLat);
             }
         });
     }
@@ -219,6 +238,55 @@ jQuery(document).ready(function ($) {
         });
     }
 
+    function renderMapPois() {
+        poisData.forEach(function (poi) {
+            if (!poi.coordinates) return;
+
+            const el = document.createElement('div');
+            el.className = 'poi-marker-admin';
+            el.innerHTML = '📍';
+            el.style.cssText = 'font-size: 24px; cursor: pointer;';
+            el.title = poi.title;
+
+            // Al hacer click, seleccionar el POI
+            el.addEventListener('click', function(e) {
+                e.stopPropagation();
+                if(currentMode === 'poi') {
+                    selectPoi(poi.id);
+                }
+            });
+
+            new maplibregl.Marker({ element: el, anchor: 'bottom' })
+                .setLngLat(poi.coordinates) // [lng, lat]
+                .addTo(map);
+        });
+    }
+
+    function placePoiMarkerMap(lngLat) {
+        if (poiMarkerTemp) {
+            poiMarkerTemp.remove();
+        }
+
+        const el = document.createElement('div');
+        el.innerHTML = '🎯';
+        el.style.cssText = 'font-size: 30px; cursor: pointer;';
+
+        poiMarkerTemp = new maplibregl.Marker({ element: el, anchor: 'bottom', draggable: true })
+            .setLngLat(lngLat)
+            .addTo(map);
+
+        // Guardar coordenadas
+        currentPoiLocation = [lngLat.lat, lngLat.lng]; // [lat, lng]
+
+        poiMarkerTemp.on('dragend', function() {
+            const lngLat = poiMarkerTemp.getLngLat();
+            currentPoiLocation = [lngLat.lat, lngLat.lng];
+        });
+
+        $('#btn-save-poi').prop('disabled', false);
+        $('#editor-status').text('Ubicación establecida. Haz clic en "Guardar Ubicación"');
+    }
+
 
     // ========================================
     // EDITOR DE IMAGEN
@@ -290,10 +358,16 @@ jQuery(document).ready(function ($) {
 
         // Dibujar polígonos existentes
         renderImagePolygons();
+        renderImagePois();
 
         // Dibujar polígono temporal
         if (currentPoints.length > 0) {
             drawPolygonOnCanvas(currentPoints, '#667eea', true);
+        }
+
+        // Dibujar POI temporal
+        if (poiMarkerTemp && currentMode === 'poi') {
+            drawPoiOnCanvas(poiMarkerTemp, '#ef4444', true);
         }
 
     }
@@ -306,6 +380,73 @@ jQuery(document).ready(function ($) {
             const color = getStatusColor(lot.status);
             drawPolygonOnCanvas(lot.coordinates, color, false, lot.lot_number);
         });
+    }
+
+    function renderImagePois() {
+        poisData.forEach(function (poi) {
+            if (!poi.coordinates) return;
+            // Coords en imagen son [y, x] (lat, lng) -> pero guardamos como [lat, lng].
+            // En map mode: lng(x), lat(y).
+            // En image mode: guardamos lat=Y, lng=X (relativos 0-1).
+            // Entonces poi.coordinates es [y, x].
+
+            // Wait, in PHP:
+            // $lat = get_post_meta($poi->ID, '_poi_lat', true); // Y
+            // $lng = get_post_meta($poi->ID, '_poi_lng', true); // X
+            // coordinates => [floatval($lat), floatval($lng)] => [Y, X]
+
+            // Para dibujar necesitamos [X, Y].
+            // X = poi.coordinates[1]
+            // Y = poi.coordinates[0]
+
+            const point = [poi.coordinates[1], poi.coordinates[0]];
+
+            drawPoiOnCanvas(point, '#8b5cf6', false, poi.title);
+        });
+    }
+
+    function drawPoiOnCanvas(point, color, isTemp, label) {
+        const offsetX = parseFloat(canvas.dataset.offsetX);
+        const offsetY = parseFloat(canvas.dataset.offsetY);
+        const drawWidth = parseFloat(canvas.dataset.drawWidth);
+        const drawHeight = parseFloat(canvas.dataset.drawHeight);
+
+        const x = offsetX + (point[0] * drawWidth);
+        const y = offsetY + (point[1] * drawHeight);
+
+        ctx.beginPath();
+        // Dibujar pin
+        ctx.moveTo(x, y);
+        ctx.lineTo(x - 10, y - 25);
+        ctx.bezierCurveTo(x - 10, y - 40, x + 10, y - 40, x + 10, y - 25);
+        ctx.lineTo(x, y);
+
+        ctx.fillStyle = color;
+        ctx.fill();
+        ctx.strokeStyle = 'white';
+        ctx.lineWidth = 2;
+        ctx.stroke();
+
+        ctx.beginPath();
+        ctx.arc(x, y - 25, 4, 0, Math.PI * 2);
+        ctx.fillStyle = 'white';
+        ctx.fill();
+
+        // Etiqueta
+        if (label) {
+            ctx.font = 'bold 12px Arial';
+            ctx.textAlign = 'center';
+            ctx.textBaseline = 'middle';
+
+            const textWidth = ctx.measureText(label).width;
+            ctx.fillStyle = 'rgba(0,0,0,0.7)';
+            ctx.beginPath();
+            ctx.roundRect(x - textWidth / 2 - 5, y - 55, textWidth + 10, 20, 5);
+            ctx.fill();
+
+            ctx.fillStyle = 'white';
+            ctx.fillText(label, x, y - 45);
+        }
     }
 
     function drawPolygonOnCanvas(points, color, isTemp, label) {
@@ -384,7 +525,7 @@ jQuery(document).ready(function ($) {
     }
 
     function onCanvasClick(e) {
-        if (!isDrawing) return;
+        if (!isDrawing && !isPlacingPoi) return;
 
         const rect = canvas.getBoundingClientRect();
         const clickX = e.clientX - rect.left;
@@ -405,7 +546,7 @@ jQuery(document).ready(function ($) {
         const relX = (clickX - offsetX) / drawWidth;
         const relY = (clickY - offsetY) / drawHeight;
 
-        if (isDrawing) {
+        if (currentMode === 'lot' && isDrawing) {
             currentPoints.push([relX, relY]);
             redrawCanvas();
 
@@ -417,6 +558,14 @@ jQuery(document).ready(function ($) {
                 );
                 if (dist < 0.03) finishDrawing();
             }
+        } else if (currentMode === 'poi' && isPlacingPoi) {
+             // Guardamos [X, Y] para dibujar, pero guardamos [Y, X] en DB (lat, lng)
+            poiMarkerTemp = [relX, relY];
+            currentPoiLocation = [relY, relX]; // [Y=lat, X=lng]
+            redrawCanvas();
+
+            $('#btn-save-poi').prop('disabled', false);
+            $('#editor-status').text('Ubicación establecida. Haz clic en "Guardar Ubicación"');
         }
     }
 
@@ -451,6 +600,36 @@ jQuery(document).ready(function ($) {
     // ========================================
 
     function bindEvents() {
+        // Tabs Switching
+        $('.tab-item').on('click', function() {
+            $('.tab-item').removeClass('active');
+            $(this).addClass('active');
+            const tabId = $(this).data('tab');
+            $('.tab-content').hide();
+            $('#tab-content-' + tabId).show();
+
+            currentMode = tabId === 'pois' ? 'poi' : 'lot';
+
+            // Toggle controls
+            if (currentMode === 'poi') {
+                $('#controls-lots').hide();
+                $('#controls-pois').show();
+            } else {
+                $('#controls-lots').show();
+                $('#controls-pois').hide();
+            }
+
+            // Clean up states
+            stopDrawing();
+            stopPlacingPoi();
+
+            // Refresh visuals (especially for canvas clicks)
+            if (canvas) redrawCanvas();
+        });
+
+        // -------------------------
+        // LOT EVENTS
+        // -------------------------
         // Seleccionar lote
         $(document).on('click', '.lot-item', function (e) {
             if ($(e.target).closest('.lot-actions').length) return;
@@ -485,11 +664,53 @@ jQuery(document).ready(function ($) {
             $('#new-lot-modal').show();
         });
 
+        // -------------------------
+        // POI EVENTS
+        // -------------------------
+        // Seleccionar POI
+        $(document).on('click', '.poi-item', function (e) {
+            if ($(e.target).closest('.poi-actions').length) return;
+            selectPoi($(this).data('poi-id'));
+        });
+
+        // Ubicar desde lista
+        $(document).on('click', '.poi-item .btn-draw-poi', function (e) {
+            e.stopPropagation();
+            const poiId = $(this).closest('.poi-item').data('poi-id');
+            selectPoi(poiId);
+            startPlacingPoi();
+        });
+
+        // Botón ubicar
+        $('#btn-place-poi').on('click', function () {
+            if (isPlacingPoi) {
+                stopPlacingPoi();
+            } else {
+                startPlacingPoi();
+            }
+        });
+
+        // Botón borrar POI
+        $('#btn-clear-poi').on('click', clearPoiLocation);
+
+        // Botón guardar POI
+        $('#btn-save-poi').on('click', savePoiLocation);
+
+        // Nuevo POI
+        $('#btn-new-poi').on('click', function () {
+            $('#new-poi-modal').show();
+        });
+
+        // -------------------------
+        // MODAL & FORMS
+        // -------------------------
         // Cerrar modal
         $(document).on('click', '.modal-close, .modal-overlay', function (e) {
             if (e.target === this || $(e.target).hasClass('modal-close')) {
                 $('#new-lot-modal').hide();
+                $('#new-poi-modal').hide();
                 stopDrawing();
+                stopPlacingPoi();
             }
         });
 
@@ -512,6 +733,33 @@ jQuery(document).ready(function ($) {
                     }
                 },
                 complete: function () { $submit.prop('disabled', false).text('Crear Lote'); }
+            });
+        });
+
+        // Formulario nuevo POI
+        $('#new-poi-form').on('submit', function (e) {
+            e.preventDefault();
+            const $form = $(this);
+            const $submit = $form.find('button[type="submit"]');
+            $submit.prop('disabled', true).text('Creando...');
+
+            $.ajax({
+                url: masterplanEditorData.ajaxUrl,
+                type: 'POST',
+                data: $form.serialize() + '&action=masterplan_create_poi&nonce=' + masterplanEditorData.nonce,
+                success: function (response) {
+                    if (response.success) {
+                        // Recargar página con POI seleccionado
+                        const currentUrl = new URL(window.location.href);
+                        currentUrl.searchParams.set('poi_id', response.data.poi_id);
+                        // Asegurar que lot_id se quita si existía
+                        currentUrl.searchParams.delete('lot_id');
+                        window.location.href = currentUrl.toString();
+                    } else {
+                        alert('Error: ' + (response.data.message || 'Error desconocido'));
+                    }
+                },
+                complete: function () { $submit.prop('disabled', false).text('Crear Punto'); }
             });
         });
     }
@@ -654,6 +902,133 @@ jQuery(document).ready(function ($) {
             },
             complete: function () {
                 $('#btn-save-polygon').prop('disabled', false).text('💾 Guardar');
+            }
+        });
+    }
+
+    // ========================================
+    // MANEJO DE POIs (FUNCIONES AUXILIARES)
+    // ========================================
+
+    function selectPoi(poiId) {
+        selectedPoiId = poiId;
+
+        // UI: resaltar POI seleccionado
+        $('.poi-item').removeClass('active');
+        $(`.poi-item[data-poi-id="${poiId}"]`).addClass('active');
+
+        // Habilitar controles
+        $('#btn-place-poi').prop('disabled', false);
+        $('#btn-clear-poi').prop('disabled', false);
+        $('#editor-status').text('POI seleccionado: Haz clic en "Ubicar Punto"');
+
+        // Cargar ubicación existente si la hay
+        const poi = poisData.find(p => p.id == poiId);
+        if (poi && poi.coordinates) {
+            // [lat, lng]
+            currentPoiLocation = poi.coordinates;
+
+            // Si estamos en modo Mapa
+            if (map) {
+                // Centrar mapa
+                map.flyTo({ center: [poi.coordinates[1], poi.coordinates[0]] }); // [lng, lat]
+                placePoiMarkerMap({ lat: poi.coordinates[0], lng: poi.coordinates[1] });
+            }
+
+            // Si estamos en modo Imagen
+            if (canvas) {
+                // Coordenadas en imagen son [y, x] -> guardamos como [y, x]
+                // Dibujamos con drawPoiOnCanvas que espera [x, y]
+                // poi.coordinates = [lat, lng]
+                // En modo imagen, lat=Y, lng=X.
+
+                // Setear marcador temporal para visualizar
+                poiMarkerTemp = [poi.coordinates[1], poi.coordinates[0]]; // [X, Y]
+                redrawCanvas();
+            }
+        } else {
+            currentPoiLocation = null;
+            if(map && poiMarkerTemp) poiMarkerTemp.remove();
+            poiMarkerTemp = null;
+            if(canvas) redrawCanvas();
+        }
+    }
+
+    function startPlacingPoi() {
+        if (!selectedPoiId) {
+            alert('Selecciona un punto primero');
+            return;
+        }
+
+        isPlacingPoi = true;
+
+        $('#btn-place-poi').text('🛑 Detener');
+        $('#btn-save-poi').prop('disabled', false);
+        $('#editor-status').text('Ubicando... Haz clic en el mapa/imagen para poner el punto');
+    }
+
+    function stopPlacingPoi() {
+        isPlacingPoi = false;
+        $('#btn-place-poi').text('🎯 Ubicar Punto');
+        $('#editor-status').text('Ubicación pausada');
+    }
+
+    function clearPoiLocation() {
+        currentPoiLocation = null;
+        if(map && poiMarkerTemp) poiMarkerTemp.remove();
+        poiMarkerTemp = null;
+        if(canvas) redrawCanvas();
+
+        isPlacingPoi = false;
+        $('#btn-place-poi').text('🎯 Ubicar Punto');
+        $('#editor-status').text('Ubicación eliminada');
+    }
+
+    function savePoiLocation() {
+        if (!selectedPoiId) {
+            alert('Selecciona un punto primero');
+            return;
+        }
+
+        if (!currentPoiLocation) {
+            alert('Debes ubicar el punto en el mapa primero');
+            return;
+        }
+
+        $('#btn-save-poi').prop('disabled', true).text('Guardando...');
+
+        $.ajax({
+            url: masterplanEditorData.ajaxUrl,
+            type: 'POST',
+            data: {
+                action: 'masterplan_save_poi_location',
+                nonce: masterplanEditorData.nonce,
+                poi_id: selectedPoiId,
+                lat: currentPoiLocation[0],
+                lng: currentPoiLocation[1]
+            },
+            success: function (response) {
+                if (response.success) {
+                    // Actualizar datos locales
+                    const poiIndex = poisData.findIndex(p => p.id == selectedPoiId);
+                    if (poiIndex !== -1) {
+                        poisData[poiIndex].coordinates = currentPoiLocation;
+                    }
+
+                    alert('✅ Ubicación guardada exitosamente');
+                    $('#editor-status').text('Ubicación guardada');
+
+                    // Recargar página para refrescar visualización
+                    location.reload();
+                } else {
+                    alert('Error: ' + (response.data.message || 'Error desconocido'));
+                }
+            },
+            error: function () {
+                alert('Error de conexión');
+            },
+            complete: function () {
+                $('#btn-save-poi').prop('disabled', false).text('💾 Guardar Ubicación');
             }
         });
     }
