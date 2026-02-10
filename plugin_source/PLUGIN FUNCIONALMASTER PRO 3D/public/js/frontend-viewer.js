@@ -348,7 +348,10 @@ jQuery(document).ready(function ($) {
      * Cargar POIs desde la API
      */
     function loadPOIs() {
-        let url = masterplanPublic.apiUrl + 'projects/' + projectId + '/pois';
+        let url = masterplanPublic.apiUrl + 'pois';
+        if (projectId) {
+            url += '?project_id=' + projectId;
+        }
 
         $.ajax({
             url: url,

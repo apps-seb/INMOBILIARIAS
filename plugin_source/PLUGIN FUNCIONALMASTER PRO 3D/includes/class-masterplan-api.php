@@ -35,14 +35,14 @@ class Masterplan_API
             ),
         ));
 
-        // Endpoint para obtener POIs de un proyecto
-        register_rest_route('masterplan/v1', '/projects/(?P<project_id>\d+)/pois', array(
+        // Endpoint para obtener POIs (opcionalmente filtrados por proyecto)
+        register_rest_route('masterplan/v1', '/pois', array(
             'methods' => 'GET',
-            'callback' => array($this, 'get_project_pois'),
+            'callback' => array($this, 'get_pois'),
             'permission_callback' => '__return_true',
             'args' => array(
                 'project_id' => array(
-                    'required' => true,
+                    'required' => false,
                     'type' => 'integer',
                     'sanitize_callback' => 'absint',
                 ),
@@ -174,23 +174,28 @@ class Masterplan_API
     }
 
     /**
-     * Obtener POIs de un proyecto específico
+     * Obtener POIs (opcionalmente filtrados por proyecto)
      */
-    public function get_project_pois($request)
+    public function get_pois($request)
     {
         $project_id = $request->get_param('project_id');
 
-        $pois = get_posts(array(
+        $args = array(
             'post_type' => 'masterplan_poi',
             'posts_per_page' => -1,
             'post_status' => 'publish',
-            'meta_query' => array(
-                    array(
+        );
+
+        if ($project_id) {
+            $args['meta_query'] = array(
+                array(
                     'key' => '_project_id',
                     'value' => $project_id,
                 )
-            )
-        ));
+            );
+        }
+
+        $pois = get_posts($args);
 
         $result = array();
 
