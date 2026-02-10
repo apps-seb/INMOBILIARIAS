@@ -19,6 +19,11 @@ jQuery(document).ready(function ($) {
     let currentPoints = [];
     let selectedLotId = masterplanEditorData.selectedLotId;
     let lotsData = masterplanEditorData.lots;
+    let poisData = masterplanEditorData.pois || [];
+    let selectedPoiId = null;
+    let isPlacingPoi = false;
+    let activeTab = 'lots';
+    let currentPoiMarker = null; // Para modo mapa
 
     // ========================================
     // INICIALIZACIÓN
@@ -73,12 +78,13 @@ jQuery(document).ready(function ($) {
 
             // Renderizar polígonos existentes
             renderMapPolygons();
+            renderMapPOIs();
 
         });
 
         // Click en mapa
         map.on('click', function (e) {
-            if (isDrawing) {
+            if (activeTab === 'lots' && isDrawing) {
                 // Lógica de dibujo de lotes
                 const point = [e.lngLat.lng, e.lngLat.lat];
                 currentPoints.push(point);
@@ -93,6 +99,9 @@ jQuery(document).ready(function ($) {
                     );
                     if (dist < 0.0001) finishDrawing();
                 }
+            } else if (activeTab === 'pois' && isPlacingPoi) {
+                // Lógica de ubicación de POI
+                updatePoiLocation(e.lngLat.lat, e.lngLat.lng);
             }
         });
     }
@@ -219,6 +228,33 @@ jQuery(document).ready(function ($) {
         });
     }
 
+    function renderMapPOIs() {
+        document.querySelectorAll('.poi-marker-admin').forEach(el => el.remove());
+
+        poisData.forEach(poi => {
+            renderSingleMapMarker(poi);
+        });
+    }
+
+    function renderSingleMapMarker(poi) {
+        if (!poi.lat || !poi.lng) return;
+
+        const el = document.createElement('div');
+        el.className = 'poi-marker-admin';
+        el.innerHTML = '📍';
+        el.style.cssText = 'font-size: 24px; cursor: pointer;';
+        el.title = poi.title;
+
+        const marker = new maplibregl.Marker(el)
+            .setLngLat([parseFloat(poi.lng), parseFloat(poi.lat)])
+            .addTo(map);
+
+        // Evento click para seleccionar
+        el.addEventListener('click', (e) => {
+            e.stopPropagation();
+            selectPoi(poi.id);
+        });
+    }
 
     // ========================================
     // EDITOR DE IMAGEN
@@ -290,12 +326,17 @@ jQuery(document).ready(function ($) {
 
         // Dibujar polígonos existentes
         renderImagePolygons();
+        renderImagePOIs();
 
         // Dibujar polígono temporal
         if (currentPoints.length > 0) {
             drawPolygonOnCanvas(currentPoints, '#667eea', true);
         }
 
+        // Dibujar marcador de POI actual si se está colocando
+        if (activeTab === 'pois' && isPlacingPoi && currentPoiMarker) {
+             drawPoiOnCanvas(currentPoiMarker, true);
+        }
     }
 
     function renderImagePolygons() {
@@ -306,6 +347,38 @@ jQuery(document).ready(function ($) {
             const color = getStatusColor(lot.status);
             drawPolygonOnCanvas(lot.coordinates, color, false, lot.lot_number);
         });
+    }
+
+    function renderImagePOIs() {
+        poisData.forEach(poi => {
+            if (!poi.lat || !poi.lng) return;
+            // Omitir si es el seleccionado y estamos editando, aunque para POIs es un punto simple
+            drawPoiOnCanvas(poi, false);
+        });
+    }
+
+    function drawPoiOnCanvas(poi, isTemp) {
+        const offsetX = parseFloat(canvas.dataset.offsetX);
+        const offsetY = parseFloat(canvas.dataset.offsetY);
+        const drawWidth = parseFloat(canvas.dataset.drawWidth);
+        const drawHeight = parseFloat(canvas.dataset.drawHeight);
+
+        const x = offsetX + (parseFloat(poi.lng) * drawWidth); // X = Lng
+        const y = offsetY + (parseFloat(poi.lat) * drawHeight); // Y = Lat
+
+        ctx.font = '24px Arial';
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'bottom';
+        ctx.fillText('📍', x, y);
+
+        if (!isTemp) {
+            ctx.font = '12px Arial';
+            ctx.fillStyle = 'white';
+            ctx.strokeStyle = 'black';
+            ctx.lineWidth = 2;
+            ctx.strokeText(poi.title, x, y - 25);
+            ctx.fillText(poi.title, x, y - 25);
+        }
     }
 
     function drawPolygonOnCanvas(points, color, isTemp, label) {
@@ -384,7 +457,7 @@ jQuery(document).ready(function ($) {
     }
 
     function onCanvasClick(e) {
-        if (!isDrawing) return;
+        if (!isDrawing && !isPlacingPoi) return;
 
         const rect = canvas.getBoundingClientRect();
         const clickX = e.clientX - rect.left;
@@ -405,7 +478,7 @@ jQuery(document).ready(function ($) {
         const relX = (clickX - offsetX) / drawWidth;
         const relY = (clickY - offsetY) / drawHeight;
 
-        if (isDrawing) {
+        if (activeTab === 'lots' && isDrawing) {
             currentPoints.push([relX, relY]);
             redrawCanvas();
 
@@ -417,6 +490,8 @@ jQuery(document).ready(function ($) {
                 );
                 if (dist < 0.03) finishDrawing();
             }
+        } else if (activeTab === 'pois' && isPlacingPoi) {
+             updatePoiLocation(relY, relX); // Y=Lat, X=Lng
         }
     }
 
@@ -447,10 +522,39 @@ jQuery(document).ready(function ($) {
     }
 
     // ========================================
-    // MANEJO DE PESTAÑAS
+    // MANEJO DE PESTAÑAS Y EVENTOS
     // ========================================
 
     function bindEvents() {
+        // Tabs
+        $('.tab-item').on('click', function() {
+            const tab = $(this).data('tab');
+            activeTab = tab;
+
+            // UI Tabs
+            $('.tab-item').removeClass('active');
+            $(this).addClass('active');
+
+            // UI Content
+            $('.tab-content').hide();
+            $(`#tab-content-${tab}`).show();
+
+            // UI Controls
+            if (tab === 'lots') {
+                $('#controls-lots').show();
+                $('#controls-pois').hide();
+                $('#editor-status').text('Modo Lotes activo');
+                stopDrawing();
+            } else {
+                $('#controls-lots').hide();
+                $('#controls-pois').show();
+                $('#editor-status').text('Modo Puntos de Interés activo');
+                stopPlacingPoi();
+            }
+        });
+
+        // --- LOTES ---
+
         // Seleccionar lote
         $(document).on('click', '.lot-item', function (e) {
             if ($(e.target).closest('.lot-actions').length) return;
@@ -485,11 +589,56 @@ jQuery(document).ready(function ($) {
             $('#new-lot-modal').show();
         });
 
+        // --- POIS ---
+
+        // Seleccionar POI
+        $(document).on('click', '.poi-item', function (e) {
+            if ($(e.target).closest('.poi-actions').length) return;
+            selectPoi($(this).data('poi-id'));
+        });
+
+        // Ubicar POI desde lista
+        $(document).on('click', '.btn-locate-poi', function (e) {
+             e.stopPropagation();
+             const poiId = $(this).closest('.poi-item').data('poi-id');
+             selectPoi(poiId);
+             startPlacingPoi();
+        });
+
+        // Eliminar POI
+        $(document).on('click', '.btn-delete-poi', function (e) {
+             e.stopPropagation();
+             const poiId = $(this).closest('.poi-item').data('poi-id');
+             if(confirm('¿Estás seguro de eliminar este punto?')) {
+                 deletePoi(poiId);
+             }
+        });
+
+        // Nuevo POI
+        $('#btn-new-poi').on('click', function() {
+            $('#new-poi-modal').show();
+        });
+
+        // Toggle ubicar
+        $('#btn-place-poi').on('click', function() {
+             if (isPlacingPoi) {
+                 stopPlacingPoi();
+             } else {
+                 startPlacingPoi();
+             }
+        });
+
+        // Guardar POI
+        $('#btn-save-poi').on('click', savePoiLocation);
+
+        // --- MODALES ---
+
         // Cerrar modal
         $(document).on('click', '.modal-close, .modal-overlay', function (e) {
             if (e.target === this || $(e.target).hasClass('modal-close')) {
-                $('#new-lot-modal').hide();
+                $('.modal-overlay').hide();
                 stopDrawing();
+                stopPlacingPoi();
             }
         });
 
@@ -514,12 +663,37 @@ jQuery(document).ready(function ($) {
                 complete: function () { $submit.prop('disabled', false).text('Crear Lote'); }
             });
         });
+
+        // Formulario nuevo POI
+        $('#new-poi-form').on('submit', function (e) {
+            e.preventDefault();
+            const $form = $(this);
+            const $submit = $form.find('button[type="submit"]');
+            $submit.prop('disabled', true).text('Creando...');
+
+            $.ajax({
+                url: masterplanEditorData.ajaxUrl,
+                type: 'POST',
+                data: $form.serialize() + '&action=masterplan_create_poi&nonce=' + masterplanEditorData.nonce,
+                success: function (response) {
+                    if (response.success) {
+                        alert('POI creado');
+                        location.reload();
+                    } else {
+                        alert('Error: ' + (response.data.message || 'Error desconocido'));
+                    }
+                },
+                complete: function () { $submit.prop('disabled', false).text('Crear POI'); }
+            });
+        });
     }
 
 
     // ========================================
-    // MANEJO DE LOTES (FUNCIONES AUXILIARES)
+    // MANEJO DE LOTES Y POIS (FUNCIONES AUXILIARES)
     // ========================================
+
+    // --- LOTES ---
 
     function selectLot(lotId) {
         selectedLotId = lotId;
@@ -654,6 +828,137 @@ jQuery(document).ready(function ($) {
             },
             complete: function () {
                 $('#btn-save-polygon').prop('disabled', false).text('💾 Guardar');
+            }
+        });
+    }
+
+    // --- POIS ---
+
+    function selectPoi(poiId) {
+        selectedPoiId = poiId;
+
+        $('.poi-item').removeClass('active');
+        $(`.poi-item[data-poi-id="${poiId}"]`).addClass('active');
+
+        $('#btn-place-poi').prop('disabled', false);
+        $('#btn-save-poi').prop('disabled', true);
+
+        $('#editor-status').text('POI seleccionado. Haz clic en "Ubicar Punto" para moverlo.');
+
+        const poi = poisData.find(p => p.id == poiId);
+        if (poi) {
+            currentPoiMarker = { ...poi }; // Clone
+        }
+    }
+
+    function startPlacingPoi() {
+        if (!selectedPoiId) {
+            alert('Selecciona un POI primero');
+            return;
+        }
+
+        isPlacingPoi = true;
+        $('#btn-place-poi').text('🛑 Detener');
+        $('#btn-save-poi').prop('disabled', false);
+        $('#editor-status').text('Haz clic en el mapa/imagen para ubicar el punto');
+
+        // Cargar ubicación actual si existe
+        const poi = poisData.find(p => p.id == selectedPoiId);
+        if (poi && poi.lat && poi.lng) {
+             currentPoiMarker = { ...poi };
+        } else {
+             currentPoiMarker = null;
+        }
+    }
+
+    function stopPlacingPoi() {
+        isPlacingPoi = false;
+        $('#btn-place-poi').text('📍 Ubicar Punto');
+        $('#editor-status').text('Modo edición POI pausado');
+
+        if (canvas) redrawCanvas();
+    }
+
+    function updatePoiLocation(lat, lng) {
+        if (!isPlacingPoi) return;
+
+        // Actualizar marcador temporal
+        const poi = poisData.find(p => p.id == selectedPoiId);
+        currentPoiMarker = {
+            id: selectedPoiId,
+            title: poi ? poi.title : 'POI',
+            lat: lat,
+            lng: lng
+        };
+
+        if (map) {
+             // Limpiar y redibujar
+             document.querySelectorAll('.poi-marker-admin').forEach(el => el.remove());
+             poisData.forEach(p => {
+                 if(p.id == selectedPoiId) return; // No dibujar el original
+                 renderSingleMapMarker(p);
+             });
+             renderSingleMapMarker(currentPoiMarker);
+        }
+
+        if (canvas) {
+            redrawCanvas();
+        }
+    }
+
+    function savePoiLocation() {
+        if (!selectedPoiId || !currentPoiMarker) {
+            return;
+        }
+
+        $('#btn-save-poi').prop('disabled', true).text('Guardando...');
+
+        $.ajax({
+            url: masterplanEditorData.ajaxUrl,
+            type: 'POST',
+            data: {
+                action: 'masterplan_save_poi_location',
+                nonce: masterplanEditorData.nonce,
+                poi_id: selectedPoiId,
+                lat: currentPoiMarker.lat,
+                lng: currentPoiMarker.lng
+            },
+            success: function(response) {
+                if (response.success) {
+                    alert('Ubicación guardada');
+                    // Actualizar datos locales
+                    const idx = poisData.findIndex(p => p.id == selectedPoiId);
+                    if (idx !== -1) {
+                        poisData[idx].lat = currentPoiMarker.lat;
+                        poisData[idx].lng = currentPoiMarker.lng;
+                    }
+                    stopPlacingPoi();
+                    location.reload();
+                } else {
+                    alert('Error');
+                }
+            },
+            complete: function() {
+                $('#btn-save-poi').prop('disabled', false).text('💾 Guardar Ubicación');
+            }
+        });
+    }
+
+    function deletePoi(poiId) {
+        $.ajax({
+            url: masterplanEditorData.ajaxUrl,
+            type: 'POST',
+            data: {
+                action: 'masterplan_delete_poi',
+                nonce: masterplanEditorData.nonce,
+                poi_id: poiId
+            },
+            success: function(response) {
+                if (response.success) {
+                    location.reload();
+                } else {
+                    alert('Error al eliminar');
+                }
             }
         });
     }

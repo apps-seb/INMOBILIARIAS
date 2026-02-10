@@ -12,6 +12,7 @@ jQuery(document).ready(function ($) {
     let ctx = null;
     let backgroundImage = null;
     let lotsData = [];
+    let poisData = [];
 
     // Configuración del proyecto (inyectada por PHP)
     const projectConfig = window.masterplanProjectConfig || {};
@@ -75,6 +76,7 @@ jQuery(document).ready(function ($) {
             });
 
             loadLots();
+            loadPOIs();
         });
     }
 
@@ -149,6 +151,37 @@ jQuery(document).ready(function ($) {
             if (!lot.coordinates || lot.coordinates.length < 3) return;
             drawLotOnCanvas(lot);
         });
+
+        // Dibujar POIs
+        poisData.forEach(poi => {
+            drawPoiOnCanvas(poi);
+        });
+    }
+
+    function drawPoiOnCanvas(poi) {
+        if (!poi.lat || !poi.lng) return;
+
+        const offsetX = parseFloat(canvas.dataset.offsetX);
+        const offsetY = parseFloat(canvas.dataset.offsetY);
+        const drawWidth = parseFloat(canvas.dataset.drawWidth);
+        const drawHeight = parseFloat(canvas.dataset.drawHeight);
+
+        const x = offsetX + (parseFloat(poi.lng) * drawWidth);
+        const y = offsetY + (parseFloat(poi.lat) * drawHeight);
+
+        // Icono
+        ctx.font = '24px Arial';
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'bottom';
+        ctx.fillText('📍', x, y);
+
+        // Título
+        ctx.font = 'bold 12px Arial';
+        ctx.fillStyle = 'white';
+        ctx.strokeStyle = 'black';
+        ctx.lineWidth = 3;
+        ctx.strokeText(poi.title, x, y - 25);
+        ctx.fillText(poi.title, x, y - 25);
     }
 
     function drawLotOnCanvas(lot) {
@@ -219,6 +252,18 @@ jQuery(document).ready(function ($) {
         // Convertir a coordenadas relativas para lotes
         const relX = (clickX - offsetX) / drawWidth;
         const relY = (clickY - offsetY) / drawHeight;
+
+        // Buscar POI clickeado (Prioridad sobre lotes)
+        const clickedPoi = poisData.find(poi => {
+            if (!poi.lat || !poi.lng) return false;
+            const dist = Math.sqrt(Math.pow(relX - parseFloat(poi.lng), 2) + Math.pow(relY - parseFloat(poi.lat), 2));
+            return dist < 0.03; // Tolerancia de click
+        });
+
+        if (clickedPoi) {
+            openPoiSidebar(clickedPoi);
+            return;
+        }
 
         // Buscar lote clickeado
         const clickedLot = lotsData.find(lot => {
@@ -295,6 +340,30 @@ jQuery(document).ready(function ($) {
             },
             error: function () {
                 console.error('Error al cargar lotes');
+            }
+        });
+    }
+
+    /**
+     * Cargar POIs desde la API
+     */
+    function loadPOIs() {
+        let url = masterplanPublic.apiUrl + 'projects/' + projectId + '/pois';
+
+        $.ajax({
+            url: url,
+            type: 'GET',
+            success: function (pois) {
+                poisData = pois;
+
+                if (useCustomImage && canvas) {
+                    redrawCanvas();
+                } else if (map) {
+                    displayPOIsOnMap(pois);
+                }
+            },
+            error: function () {
+                console.error('Error al cargar POIs');
             }
         });
     }
@@ -421,9 +490,72 @@ jQuery(document).ready(function ($) {
         });
     }
 
+    function displayPOIsOnMap(pois) {
+        pois.forEach(poi => {
+            if (!poi.lat || !poi.lng) return;
+
+            const el = document.createElement('div');
+            el.className = 'poi-marker';
+            el.innerHTML = '📍';
+            el.style.cssText = 'font-size: 30px; cursor: pointer; text-shadow: 0 2px 4px rgba(0,0,0,0.5);';
+            el.title = poi.title;
+
+            const marker = new maplibregl.Marker({ element: el, anchor: 'bottom' })
+                .setLngLat([parseFloat(poi.lng), parseFloat(poi.lat)])
+                .addTo(map);
+
+            // Popup
+            const popup = new maplibregl.Popup({ offset: 35 })
+                .setHTML(`
+                    <div class="poi-popup">
+                        <h3>${poi.title}</h3>
+                        <p>${poi.type}</p>
+                        <button class="btn-more-info" onclick="window.openPoiSidebarById(${poi.id})">Ver más</button>
+                    </div>
+                `);
+
+            marker.setPopup(popup);
+        });
+
+        // Exponer función global para el popup
+        window.openPoiSidebarById = function(poiId) {
+            const poi = poisData.find(p => p.id == poiId);
+            if (poi) openPoiSidebar(poi);
+        };
+    }
+
     /**
      * Abrir sidebar con información del lote
      */
+    function openPoiSidebar(poi) {
+        const typeLabels = {
+            'info': 'ℹ️ Información',
+            'park': '🌳 Parque / Zona Verde',
+            'facility': '🏢 Instalación / Amenidad',
+            'entrance': '🚪 Acceso / Portería'
+        };
+
+        const sidebarHTML = `
+            <div class="lot-detail poi-detail">
+                ${poi.thumbnail ? `<img src="${poi.thumbnail}" alt="${poi.title}" class="lot-image">` : ''}
+
+                <div class="lot-header">
+                    <h2 class="lot-title">${poi.title}</h2>
+                </div>
+
+                <div class="lot-status" style="background-color: #3b82f6;">
+                    ${typeLabels[poi.type] || poi.type}
+                </div>
+
+                ${poi.description ? `<div class="lot-description">${poi.description}</div>` : ''}
+            </div>
+        `;
+
+        $('#sidebar-content').html(sidebarHTML);
+        $('#masterplan-sidebar').addClass('active');
+        $('#masterplan-overlay').addClass('active');
+    }
+
     function openSidebar(lotId) {
         const lot = lotsData.find(l => l.id === lotId);
         if (!lot) return;

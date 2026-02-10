@@ -80,6 +80,32 @@ class Masterplan_Project_Editor
             );
         }
 
+        // Obtener POIs del proyecto
+        $pois = get_posts(array(
+            'post_type' => 'masterplan_poi',
+            'posts_per_page' => -1,
+            'meta_query' => array(
+                    array(
+                    'key' => '_project_id',
+                    'value' => $project_id,
+                    'compare' => '='
+                )
+            ),
+            'post_status' => array('publish', 'draft')
+        ));
+
+        $pois_data = array();
+        foreach ($pois as $poi) {
+            $pois_data[] = array(
+                'id' => $poi->ID,
+                'title' => $poi->post_title,
+                'type' => get_post_meta($poi->ID, '_poi_type', true) ?: 'info',
+                'lat' => get_post_meta($poi->ID, '_poi_lat', true),
+                'lng' => get_post_meta($poi->ID, '_poi_lng', true),
+                'thumbnail' => get_the_post_thumbnail_url($poi->ID, 'thumbnail')
+            );
+        }
+
 ?>
         <div class="wrap masterplan-editor-wrap">
             <div class="masterplan-editor-header">
@@ -107,6 +133,7 @@ class Masterplan_Project_Editor
                 <div class="lots-panel">
                     <div class="panel-header-tabs">
                         <div class="tab-item active" data-tab="lots">📍 Lotes</div>
+                        <div class="tab-item" data-tab="pois">🚩 Puntos</div>
                     </div>
 
                     <!-- Pestaña LOTES -->
@@ -155,6 +182,45 @@ class Masterplan_Project_Editor
                         </div>
                     </div>
 
+                    <!-- Pestaña POIS -->
+                    <div class="tab-content" id="tab-content-pois" style="display:none;">
+                        <div class="panel-actions">
+                            <button type="button" id="btn-new-poi" class="button button-primary" style="width:100%">
+                                ➕ Nuevo Punto de Interés
+                            </button>
+                        </div>
+                        <div class="lots-list" id="pois-list">
+                            <?php if (empty($pois_data)): ?>
+                                <div class="no-items">
+                                    <p>No hay POIs creados</p>
+                                    <small>Haz clic en "Nuevo Punto" para comenzar</small>
+                                </div>
+                            <?php else: ?>
+                                <?php foreach ($pois_data as $poi):
+                                    $has_coords = ($poi['lat'] && $poi['lng']);
+                                ?>
+                                    <div class="poi-item" data-poi-id="<?php echo $poi['id']; ?>">
+                                        <div class="lot-info">
+                                            <strong><?php echo esc_html($poi['title']); ?></strong>
+                                            <small><?php echo esc_html($poi['type']); ?></small>
+                                        </div>
+                                        <div class="poi-actions">
+                                            <button type="button" class="btn-locate-poi" title="Ubicar en Mapa" style="color: <?php echo $has_coords ? '#10b981' : '#ccc'; ?>">
+                                                📍
+                                            </button>
+                                            <a href="<?php echo get_edit_post_link($poi['id']); ?>" class="btn-edit" title="Editar POI">
+                                                ⚙️
+                                            </a>
+                                            <button type="button" class="btn-delete-poi" title="Eliminar POI" style="color: #ef4444;">
+                                                🗑️
+                                            </button>
+                                        </div>
+                                    </div>
+                                <?php endforeach; ?>
+                            <?php endif; ?>
+                        </div>
+                    </div>
+
                 </div>
 
                 <!-- Panel derecho: Editor de mapa/imagen -->
@@ -187,8 +253,16 @@ class Masterplan_Project_Editor
                                 💾 Guardar
                             </button>
                         </div>
+                        <div class="control-group" id="controls-pois" style="display:none;">
+                            <button type="button" id="btn-place-poi" class="button" disabled>
+                                📍 Ubicar Punto
+                            </button>
+                            <button type="button" id="btn-save-poi" class="button button-primary" disabled>
+                                💾 Guardar Ubicación
+                            </button>
+                        </div>
                         <div class="control-info">
-                            <span id="editor-status">Selecciona un lote para dibujar</span>
+                            <span id="editor-status">Selecciona un elemento para editar</span>
                         </div>
                     </div>
                 </div>
@@ -589,6 +663,7 @@ class Masterplan_Project_Editor
         var masterplanEditorData = {
             projectId: <?php echo $project_id; ?>,
             lots: <?php echo json_encode($lots_data); ?>,
+            pois: <?php echo json_encode($pois_data); ?>,
             useCustomImage: <?php echo $use_custom_image == '1' ? 'true' : 'false'; ?>,
             customImageUrl: '<?php echo esc_js($custom_image_url); ?>',
             centerLat: <?php echo floatval($center_lat); ?>,
@@ -832,5 +907,103 @@ class Masterplan_Project_Editor
         }
 
         wp_send_json_success(array('locations' => $locations));
+    }
+
+    /**
+     * AJAX: Crear nuevo POI
+     */
+    public function create_poi()
+    {
+        check_ajax_referer('masterplan_admin_nonce', 'nonce');
+
+        if (!current_user_can('manage_options')) {
+            wp_send_json_error(array('message' => 'Permisos insuficientes'));
+        }
+
+        $project_id = isset($_POST['project_id']) ? absint($_POST['project_id']) : 0;
+        $title = isset($_POST['title']) ? sanitize_text_field($_POST['title']) : '';
+        $type = isset($_POST['type']) ? sanitize_text_field($_POST['type']) : 'info';
+
+        if (!$project_id || !$title) {
+            wp_send_json_error(array('message' => 'Datos incompletos'));
+        }
+
+        // Crear el POI
+        $poi_id = wp_insert_post(array(
+            'post_type' => 'masterplan_poi',
+            'post_title' => $title,
+            'post_status' => 'publish'
+        ));
+
+        if (is_wp_error($poi_id)) {
+            wp_send_json_error(array('message' => 'Error al crear el POI'));
+        }
+
+        // Guardar metadatos
+        update_post_meta($poi_id, '_project_id', $project_id);
+        update_post_meta($poi_id, '_poi_type', $type);
+
+        wp_send_json_success(array(
+            'message' => 'POI creado exitosamente',
+            'poi' => array(
+                'id' => $poi_id,
+                'title' => $title,
+                'type' => $type,
+                'lat' => null,
+                'lng' => null
+            )
+        ));
+    }
+
+    /**
+     * AJAX: Guardar ubicación POI
+     */
+    public function save_poi_location()
+    {
+        check_ajax_referer('masterplan_admin_nonce', 'nonce');
+
+        if (!current_user_can('manage_options')) {
+            wp_send_json_error(array('message' => 'Permisos insuficientes'));
+        }
+
+        $poi_id = isset($_POST['poi_id']) ? absint($_POST['poi_id']) : 0;
+        $lat = isset($_POST['lat']) ? sanitize_text_field($_POST['lat']) : '';
+        $lng = isset($_POST['lng']) ? sanitize_text_field($_POST['lng']) : '';
+
+        if (!$poi_id) {
+            wp_send_json_error(array('message' => 'Datos incompletos'));
+        }
+
+        update_post_meta($poi_id, '_poi_lat', $lat);
+        update_post_meta($poi_id, '_poi_lng', $lng);
+
+        wp_send_json_success(array('message' => 'Ubicación guardada'));
+    }
+
+    /**
+     * AJAX: Eliminar POI
+     */
+    public function delete_poi()
+    {
+        check_ajax_referer('masterplan_admin_nonce', 'nonce');
+
+        if (!current_user_can('manage_options')) {
+            wp_send_json_error(array('message' => 'Permisos insuficientes'));
+        }
+
+        $poi_id = isset($_POST['poi_id']) ? absint($_POST['poi_id']) : 0;
+
+        if (!$poi_id) {
+            wp_send_json_error(array('message' => 'ID inválido'));
+        }
+
+        $deleted = wp_delete_post($poi_id, true);
+
+        if ($deleted) {
+            wp_send_json_success(array('message' => 'POI eliminado'));
+        }
+        else {
+            wp_send_json_error(array('message' => 'Error al eliminar'));
+        }
     }
 }

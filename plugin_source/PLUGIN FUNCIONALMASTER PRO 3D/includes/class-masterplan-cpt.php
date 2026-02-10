@@ -55,6 +55,38 @@ class Masterplan_CPT
         );
 
         register_post_type('lote', $args);
+
+        // Registrar POIs (Puntos de Interés)
+        $poi_labels = array(
+            'name' => 'Puntos de Interés',
+            'singular_name' => 'Punto de Interés',
+            'menu_name' => 'Puntos de Interés',
+            'add_new' => 'Agregar Nuevo',
+            'add_new_item' => 'Agregar Nuevo POI',
+            'new_item' => 'Nuevo POI',
+            'edit_item' => 'Editar POI',
+            'view_item' => 'Ver POI',
+            'all_items' => 'Todos los POIs',
+            'search_items' => 'Buscar POIs',
+            'parent_item_colon' => 'Proyecto Padre:',
+        );
+
+        $poi_args = array(
+            'labels' => $poi_labels,
+            'public' => true,
+            'publicly_queryable' => true,
+            'show_ui' => true,
+            'show_in_menu' => false, // Oculto del menú principal, gestionado desde el editor
+            'query_var' => true,
+            'rewrite' => array('slug' => 'poi'),
+            'capability_type' => 'post',
+            'has_archive' => false,
+            'hierarchical' => false,
+            'supports' => array('title', 'editor', 'thumbnail', 'excerpt'),
+            'show_in_rest' => true,
+        );
+
+        register_post_type('masterplan_poi', $poi_args);
     }
 
     /**
@@ -87,6 +119,25 @@ class Masterplan_CPT
             'lote',
             'side',
             'default'
+        );
+
+        // Meta boxes para POIs
+        add_meta_box(
+            'masterplan_poi_project',
+            'Proyecto Asociado',
+            array($this, 'render_project_metabox'),
+            'masterplan_poi',
+            'side',
+            'high'
+        );
+
+        add_meta_box(
+            'masterplan_poi_details',
+            'Detalles del POI',
+            array($this, 'render_poi_details_metabox'),
+            'masterplan_poi',
+            'normal',
+            'high'
         );
     }
 
@@ -127,6 +178,49 @@ class Masterplan_CPT
         <?php
         endif; ?>
         <?php
+    }
+
+    /**
+     * Renderizar Meta Box de Detalles del POI
+     */
+    public function render_poi_details_metabox($post)
+    {
+        wp_nonce_field('masterplan_save_poi_details', 'masterplan_poi_details_nonce');
+
+        $poi_type = get_post_meta($post->ID, '_poi_type', true);
+        $poi_lat = get_post_meta($post->ID, '_poi_lat', true);
+        $poi_lng = get_post_meta($post->ID, '_poi_lng', true);
+?>
+        <table class="form-table">
+            <tr>
+                <th><label for="poi_type">Tipo de POI</label></th>
+                <td>
+                    <select id="poi_type" name="poi_type">
+                        <option value="info" <?php selected($poi_type, 'info'); ?>>ℹ️ Información</option>
+                        <option value="park" <?php selected($poi_type, 'park'); ?>>🌳 Parque / Zona Verde</option>
+                        <option value="facility" <?php selected($poi_type, 'facility'); ?>>🏢 Instalación / Amenidad</option>
+                        <option value="entrance" <?php selected($poi_type, 'entrance'); ?>>🚪 Acceso / Portería</option>
+                    </select>
+                </td>
+            </tr>
+            <tr>
+                <th><label>Coordenadas</label></th>
+                <td>
+                    <div style="display:flex; gap:10px;">
+                        <div>
+                            <label for="poi_lat">Latitud / Y</label>
+                            <input type="text" id="poi_lat" name="poi_lat" value="<?php echo esc_attr($poi_lat); ?>" class="regular-text">
+                        </div>
+                        <div>
+                            <label for="poi_lng">Longitud / X</label>
+                            <input type="text" id="poi_lng" name="poi_lng" value="<?php echo esc_attr($poi_lng); ?>" class="regular-text">
+                        </div>
+                    </div>
+                    <p class="description">Coordenadas geográficas o relativas (0-1) según el modo.</p>
+                </td>
+            </tr>
+        </table>
+<?php
     }
 
     /**
@@ -266,9 +360,22 @@ class Masterplan_CPT
      */
     public function save_meta_boxes($post_id)
     {
-        // Verificar nonce
-        if (!isset($_POST['masterplan_lot_details_nonce']) ||
-        !wp_verify_nonce($_POST['masterplan_lot_details_nonce'], 'masterplan_save_lot_details')) {
+        // Verificar si es Lote o POI
+        $post_type = get_post_type($post_id);
+
+        if ($post_type === 'lote') {
+            // Verificar nonce de Lote
+            if (!isset($_POST['masterplan_lot_details_nonce']) ||
+            !wp_verify_nonce($_POST['masterplan_lot_details_nonce'], 'masterplan_save_lot_details')) {
+                return;
+            }
+        } elseif ($post_type === 'masterplan_poi') {
+             // Verificar nonce de POI
+             if (!isset($_POST['masterplan_poi_details_nonce']) ||
+             !wp_verify_nonce($_POST['masterplan_poi_details_nonce'], 'masterplan_save_poi_details')) {
+                 return;
+             }
+        } else {
             return;
         }
 
@@ -282,9 +389,22 @@ class Masterplan_CPT
             return;
         }
 
-        // Guardar proyecto asociado
+        // Guardar proyecto asociado (común para ambos)
         if (isset($_POST['project_id'])) {
             update_post_meta($post_id, '_project_id', absint($_POST['project_id']));
+        }
+
+        // Guardar datos del POI
+        if ($post_type === 'masterplan_poi') {
+            if (isset($_POST['poi_type'])) {
+                update_post_meta($post_id, '_poi_type', sanitize_text_field($_POST['poi_type']));
+            }
+            if (isset($_POST['poi_lat'])) {
+                update_post_meta($post_id, '_poi_lat', sanitize_text_field($_POST['poi_lat']));
+            }
+            if (isset($_POST['poi_lng'])) {
+                update_post_meta($post_id, '_poi_lng', sanitize_text_field($_POST['poi_lng']));
+            }
         }
 
         // Guardar datos del lote
