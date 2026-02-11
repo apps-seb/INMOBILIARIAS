@@ -94,11 +94,12 @@ jQuery(document).ready(function ($) {
             routesData.forEach(route => {
                 const layerId = 'route-' + route.id;
                 if (map.getLayer(layerId)) {
-                    map.setLayoutProperty(layerId, 'visibility', visible ? 'visible' : 'none');
+                    // Animación suave de opacidad
+                    map.setPaintProperty(layerId, 'line-opacity', visible ? 1 : 0);
                 }
             });
         } else if (canvas) {
-            redrawCanvas(); // Canvas redraw checks button state or global flag
+            redrawCanvas();
         }
     }
 
@@ -365,9 +366,18 @@ jQuery(document).ready(function ($) {
              });
              map.addLayer({
                  id: sourceId, type: 'line', source: sourceId,
-                 paint: { 'line-color': route.color, 'line-width': parseInt(route.width) },
+                 paint: {
+                     'line-color': route.color,
+                     'line-width': parseInt(route.width),
+                     'line-opacity': 1, // Start visible if active, but let's check button state
+                     'line-opacity-transition': { duration: 800 } // Suave
+                 },
                  layout: { 'line-join': 'round', 'line-cap': 'round' }
              });
+
+             // Sync with initial button state
+             const isVisible = $('#btn-toggle-routes').hasClass('active');
+             map.setPaintProperty(sourceId, 'line-opacity', isVisible ? 1 : 0);
         });
     }
 
@@ -760,9 +770,10 @@ jQuery(document).ready(function ($) {
     function updatePoiScale() {
         if (!map) return;
         const zoom = map.getZoom();
-        // Scale logic: 1 at zoom 17, 0.4 at zoom 12
-        let scale = 0.4 + 0.6 * ((zoom - 12) / (17 - 12));
-        scale = Math.max(0.4, Math.min(1.2, scale)); // Allow slight overscale at very close zoom
+        // Scale logic: Reduced slightly as requested (smaller start)
+        // 0.3 at zoom 12, 0.8 at zoom 17
+        let scale = 0.3 + 0.5 * ((zoom - 12) / (17 - 12));
+        scale = Math.max(0.3, Math.min(0.9, scale));
 
         // Apply scale ONLY, no translation. MapLibre handles the position of the wrapper.
         // The wrapper is anchored at 'bottom', so the bottom-center of the wrapper is at the lat/lng.

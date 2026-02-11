@@ -224,9 +224,15 @@ class Masterplan_Public
             <div class="masterplan-ui-controls">
                 <div id="masterplan-logo-container"></div>
                 <div class="masterplan-control-bar">
-                    <button class="mp-control-btn active" id="btn-toggle-project" title="Ver Proyecto">🏠 Proyecto</button>
-                    <button class="mp-control-btn active" id="btn-toggle-routes" title="Ver Vías/Rutas">🛣️ Vías</button>
-                    <button class="mp-control-btn active" id="btn-toggle-pois" title="Ver Puntos de Interés">📍 Puntos</button>
+                    <button class="mp-control-btn active" id="btn-toggle-project" title="Ver Proyecto">
+                        <span class="mp-btn-icon">🏠</span>
+                    </button>
+                    <button class="mp-control-btn active" id="btn-toggle-routes" title="Ver Vías/Rutas">
+                        <span class="mp-btn-icon">🛣️</span>
+                    </button>
+                    <button class="mp-control-btn active" id="btn-toggle-pois" title="Ver Puntos de Interés">
+                        <span class="mp-btn-icon">📍</span>
+                    </button>
                 </div>
             </div>
         </div>

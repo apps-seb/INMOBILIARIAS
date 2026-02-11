@@ -100,6 +100,11 @@ class Masterplan_Core
         $this->loader->add_action('wp_ajax_masterplan_create_poi', $project_editor, 'create_poi');
         $this->loader->add_action('wp_ajax_masterplan_save_poi_location', $project_editor, 'save_poi_location');
         $this->loader->add_action('wp_ajax_masterplan_delete_poi', $project_editor, 'delete_poi');
+
+        // AJAX handlers para Rutas
+        $this->loader->add_action('wp_ajax_masterplan_create_route', $project_editor, 'create_route');
+        $this->loader->add_action('wp_ajax_masterplan_save_route_path', $project_editor, 'save_route_path');
+        $this->loader->add_action('wp_ajax_masterplan_delete_route', $project_editor, 'delete_route');
     }
 
     /**
