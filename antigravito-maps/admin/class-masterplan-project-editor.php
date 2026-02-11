@@ -464,7 +464,7 @@ class Masterplan_Project_Editor
 
                         <div class="form-row">
                             <label for="new_route_color">Color del Trazado</label>
-                            <input type="color" id="new_route_color" name="color" value="#ffffff">
+                            <input type="color" id="new_route_color" name="color" value="#ffffff" style="height: 40px; padding: 2px;">
                         </div>
 
                         <div class="form-row">

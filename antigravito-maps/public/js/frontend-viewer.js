@@ -94,13 +94,64 @@ jQuery(document).ready(function ($) {
             routesData.forEach(route => {
                 const layerId = 'route-' + route.id;
                 if (map.getLayer(layerId)) {
-                    // Animación suave de opacidad
-                    map.setPaintProperty(layerId, 'line-opacity', visible ? 1 : 0);
+                    if (visible) {
+                         // Reset and animate "drawing"
+                         animateRouteDrawing(layerId, route.coordinates);
+                    } else {
+                         // Hide immediately or fade out
+                         map.setPaintProperty(layerId, 'line-opacity', 0);
+                    }
                 }
             });
         } else if (canvas) {
+            // For canvas, we just toggle redraw. Advanced animation on canvas is complex here.
             redrawCanvas();
         }
+    }
+
+    // Animation loop for MapLibre routes (simulating drawing)
+    function animateRouteDrawing(layerId, coordinates) {
+        // First make it visible but transparent or dashed
+        map.setPaintProperty(layerId, 'line-opacity', 1);
+
+        // We use a trick: line-dasharray to simulate drawing.
+        // But MapLibre line-dasharray is static in some versions or hard to animate smoothly without a custom source update loop.
+        // A simpler "Luxury" effect is a slow fade in + subtle dash movement or just a progress line.
+        // Given constraints, we will use a requestAnimationFrame loop to update the 'data' of the source
+        // to progressively add points (LineString growth).
+
+        // Fix: Ensure sourceId matches the source ID used in displayRoutesOnMap (which is 'route-' + route.id)
+        // layerId is also 'route-' + route.id
+        const sourceId = layerId;
+        const totalPoints = coordinates.length;
+        if (totalPoints < 2) return;
+
+        let currentIdx = 1;
+        // Adjust speed: skip points if too many
+        const step = Math.ceil(totalPoints / 100) || 1;
+
+        function frame() {
+            if (!map.getSource(sourceId)) return;
+
+            currentIdx += step;
+            if (currentIdx > totalPoints) currentIdx = totalPoints;
+
+            const subset = coordinates.slice(0, currentIdx);
+
+            map.getSource(sourceId).setData({
+                type: 'Feature',
+                geometry: {
+                    type: 'LineString',
+                    coordinates: subset
+                }
+            });
+
+            if (currentIdx < totalPoints) {
+                requestAnimationFrame(frame);
+            }
+        }
+
+        frame();
     }
 
     function togglePoisVisibility(visible) {
@@ -360,24 +411,26 @@ jQuery(document).ready(function ($) {
         routes.forEach(route => {
              if(!route.coordinates || route.coordinates.length < 2) return;
              const sourceId = 'route-' + route.id;
+
+             // Check initial state
+             const isVisible = $('#btn-toggle-routes').hasClass('active');
+
              map.addSource(sourceId, {
                  type: 'geojson',
-                 data: { type: 'Feature', geometry: { type: 'LineString', coordinates: route.coordinates } }
+                 // If visible initially, show full. If not, we might animate later.
+                 data: { type: 'Feature', geometry: { type: 'LineString', coordinates: isVisible ? route.coordinates : [] } }
              });
+
              map.addLayer({
                  id: sourceId, type: 'line', source: sourceId,
                  paint: {
                      'line-color': route.color,
                      'line-width': parseInt(route.width),
-                     'line-opacity': 1, // Start visible if active, but let's check button state
-                     'line-opacity-transition': { duration: 800 } // Suave
+                     'line-opacity': isVisible ? 1 : 0,
+                     'line-blur': 1 // Soft edge for "glow" feel
                  },
                  layout: { 'line-join': 'round', 'line-cap': 'round' }
              });
-
-             // Sync with initial button state
-             const isVisible = $('#btn-toggle-routes').hasClass('active');
-             map.setPaintProperty(sourceId, 'line-opacity', isVisible ? 1 : 0);
         });
     }
 

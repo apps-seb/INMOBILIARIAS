@@ -224,14 +224,27 @@ class Masterplan_Public
             <div class="masterplan-ui-controls">
                 <div id="masterplan-logo-container"></div>
                 <div class="masterplan-control-bar">
-                    <button class="mp-control-btn active" id="btn-toggle-project" title="Ver Proyecto">
-                        <span class="mp-btn-icon">🏠</span>
+                    <button class="mp-control-btn active" id="btn-toggle-project" title="Inicio / Proyecto">
+                        <!-- Luxury Home Icon -->
+                        <svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+                            <path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"></path>
+                            <polyline points="9 22 9 12 15 12 15 22"></polyline>
+                        </svg>
                     </button>
-                    <button class="mp-control-btn active" id="btn-toggle-routes" title="Ver Vías/Rutas">
-                        <span class="mp-btn-icon">🛣️</span>
+                    <button class="mp-control-btn active" id="btn-toggle-routes" title="Rutas / Vías">
+                        <!-- Luxury Path/Route Icon -->
+                        <svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+                            <path d="M19 19c-1.2-1.2-2.8-1.5-3.8-1.5-1.5 0-3.5 1.5-5.2 2-1.7.5-3.3-.8-3-2 .3-1.2 2.5-1 3.5-.5 1 .5 2.5 1.5 4 1.5 1.2 0 2.8-.8 4-2 .2-.2.3-.5.5-.7"></path>
+                            <path d="M4 5c1.2 1.2 2.8 1.5 3.8 1.5 1.5 0 3.5-1.5 5.2-2 1.7-.5 3.3.8 3 2-.3 1.2-2.5 1-3.5.5-1-.5-2.5-1.5-4-1.5-1.2 0-2.8.8-4 2-.2.2-.3.5-.5.7"></path>
+                            <circle cx="12" cy="12" r="2"></circle>
+                        </svg>
                     </button>
-                    <button class="mp-control-btn active" id="btn-toggle-pois" title="Ver Puntos de Interés">
-                        <span class="mp-btn-icon">📍</span>
+                    <button class="mp-control-btn active" id="btn-toggle-pois" title="Puntos de Interés">
+                        <!-- Luxury Pin Icon -->
+                        <svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+                            <path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"></path>
+                            <circle cx="12" cy="10" r="3"></circle>
+                        </svg>
                     </button>
                 </div>
             </div>
