@@ -293,9 +293,9 @@ class Masterplan_Public
         // MapLibre GL CSS
         wp_enqueue_style(
             'maplibre-gl',
-            'https://unpkg.com/maplibre-gl@3.6.2/dist/maplibre-gl.css',
+            'https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.css',
             array(),
-            '3.6.2'
+            '4.7.1'
         );
 
         // Estilos del viewer
@@ -328,9 +328,9 @@ class Masterplan_Public
         // MapLibre GL JS
         wp_enqueue_script(
             'maplibre-gl',
-            'https://unpkg.com/maplibre-gl@3.6.2/dist/maplibre-gl.js',
+            'https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.js',
             array(),
-            '3.6.2',
+            '4.7.1',
             true
         );
 
