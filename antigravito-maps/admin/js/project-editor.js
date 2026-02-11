@@ -31,7 +31,11 @@ jQuery(document).ready(function ($) {
     let isDrawingRoute = false;
     let currentRoutePoints = [];
 
-    // Overlay
+    // Project Overlays
+    let overlaysData = masterplanEditorData.overlays || [];
+    let selectedOverlayId = null;
+
+    // Overlay (Shared Editing State)
     let isEditingOverlay = false;
     let overlayCorners = []; // [TL, TR, BR, BL] (lngLat)
     let overlayImage = null; // Image object or URL
@@ -92,7 +96,7 @@ jQuery(document).ready(function ($) {
             renderMapPolygons();
             renderMapPOIs();
             renderMapRoutes();
-
+            renderMapOverlays();
         });
 
         // Click en mapa
@@ -157,7 +161,11 @@ jQuery(document).ready(function ($) {
         if (dragCornerIndex !== -1) {
             // Dragging
             overlayCorners[dragCornerIndex] = [e.lngLat.lng, e.lngLat.lat];
-            updateMapOverlay();
+            if (activeTab === 'overlays') {
+                updateProjectOverlayMap();
+            } else {
+                updateMapOverlay();
+            }
         } else {
             // Hover cursor check
             // (Optional optimization: only check if close)
@@ -755,19 +763,29 @@ jQuery(document).ready(function ($) {
                 $('#controls-lots').show();
                 $('#controls-pois').hide();
                 $('#controls-routes').hide();
+                $('#controls-overlays-project').hide();
                 $('#editor-status').text('Modo Lotes activo');
-                stopDrawing(); stopPlacingPoi(); stopDrawingRoute();
+                stopDrawing(); stopPlacingPoi(); stopDrawingRoute(); stopEditingProjectOverlay();
             } else if (tab === 'pois') {
                 $('#controls-lots').hide();
                 $('#controls-pois').show();
                 $('#controls-routes').hide();
+                $('#controls-overlays-project').hide();
                 $('#editor-status').text('Modo Puntos de Interés activo');
-                stopDrawing(); stopPlacingPoi(); stopDrawingRoute();
+                stopDrawing(); stopPlacingPoi(); stopDrawingRoute(); stopEditingProjectOverlay();
             } else if (tab === 'routes') {
                 $('#controls-lots').hide();
                 $('#controls-pois').hide();
                 $('#controls-routes').show();
+                $('#controls-overlays-project').hide();
                 $('#editor-status').text('Modo Rutas activo');
+                stopDrawing(); stopPlacingPoi(); stopDrawingRoute(); stopEditingProjectOverlay();
+            } else if (tab === 'overlays') {
+                $('#controls-lots').hide();
+                $('#controls-pois').hide();
+                $('#controls-routes').hide();
+                $('#controls-overlays-project').show();
+                $('#editor-status').text('Modo Planos activo');
                 stopDrawing(); stopPlacingPoi(); stopDrawingRoute();
             }
         });
@@ -975,6 +993,60 @@ jQuery(document).ready(function ($) {
         });
         $('#btn-clear-route').on('click', clearRoute);
         $('#btn-save-route').on('click', saveRoute);
+
+        // --- OVERLAYS PROJECT ---
+        $('#btn-new-project-overlay').on('click', function() {
+             const frame = wp.media({ title: 'Subir Plano', button: { text: 'Usar' }, multiple: false });
+             frame.on('select', () => {
+                 const att = frame.state().get('selection').first().toJSON();
+                 addProjectOverlay(att);
+             });
+             frame.open();
+        });
+
+        $(document).on('click', '.overlay-item', function(e) {
+            if ($(e.target).closest('.lot-actions').length) return;
+            // Select logic if needed, currently editing is via button
+            const oid = $(this).data('overlay-id');
+            selectedOverlayId = oid;
+            $('.overlay-item').removeClass('active');
+            $(this).addClass('active');
+        });
+
+        $(document).on('click', '.btn-edit-project-overlay', function(e) {
+             e.stopPropagation();
+             const oid = $(this).closest('.overlay-item').data('overlay-id');
+             selectedOverlayId = oid;
+             $('.overlay-item').removeClass('active');
+             $(this).closest('.overlay-item').addClass('active');
+             startEditingProjectOverlay(oid);
+        });
+
+        $(document).on('click', '.btn-delete-project-overlay', function(e) {
+             e.stopPropagation();
+             const oid = $(this).closest('.overlay-item').data('overlay-id');
+             if(confirm('¿Eliminar este plano?')) deleteProjectOverlay(oid);
+        });
+
+        $('#btn-edit-overlay-pos').on('click', function() {
+             if (isEditingOverlay) stopEditingProjectOverlay();
+             else if (selectedOverlayId) startEditingProjectOverlay(selectedOverlayId);
+        });
+
+        $('#btn-save-overlay-project').on('click', saveProjectOverlay);
+
+        $('#overlay-opacity-slider').on('input', function() {
+             if (selectedOverlayId && map) {
+                 const val = parseFloat($(this).val());
+                 const layerId = 'project-overlay-' + selectedOverlayId;
+                 if (map.getLayer(layerId)) {
+                     map.setPaintProperty(layerId, 'raster-opacity', val);
+                 }
+                 // Update data in memory
+                 const ov = overlaysData.find(o => o.id == selectedOverlayId);
+                 if(ov) ov.opacity = val;
+             }
+        });
     }
 
 
@@ -1527,6 +1599,157 @@ jQuery(document).ready(function ($) {
         if (isTemp) ctx.setLineDash([5, 5]); else ctx.setLineDash([]);
         ctx.stroke();
     }
+
+    // ========================================
+    // PROJECT OVERLAYS LOGIC
+    // ========================================
+
+    function renderMapOverlays() {
+        if (!map) return;
+        overlaysData.forEach(overlay => {
+             const sourceId = 'project-overlay-' + overlay.id;
+             if (map.getSource(sourceId)) return;
+
+             map.addSource(sourceId, {
+                 type: 'image',
+                 url: overlay.url,
+                 coordinates: overlay.corners
+             });
+             // Add before lots to be background
+             const beforeLayer = map.getLayer('lots-fill') ? 'lots-fill' : undefined;
+             map.addLayer({
+                 id: sourceId,
+                 type: 'raster',
+                 source: sourceId,
+                 paint: { 'raster-opacity': parseFloat(overlay.opacity || 0.7) }
+             }, beforeLayer);
+        });
+    }
+
+    function addProjectOverlay(att) {
+        if (!map) {
+            alert('La función de Planos/Mapas solo está disponible en el Modo Mapa 3D actualmente.');
+            return;
+        }
+
+        // Default corners
+        const center = map.getCenter();
+        const d = 0.002; // Bigger default for project map
+        const corners = [
+            [center.lng - d, center.lat + d],
+            [center.lng + d, center.lat + d],
+            [center.lng + d, center.lat - d],
+            [center.lng - d, center.lat - d]
+        ];
+
+        const newOverlay = {
+            id: 'temp_' + Date.now(), // Temp ID until saved? Or just use rand
+            wp_id: att.id,
+            url: att.url,
+            title: att.title || 'Nuevo Plano',
+            corners: corners,
+            opacity: 0.7
+        };
+
+        // We save immediately to persist the structure
+        saveProjectOverlayData(newOverlay, true);
+    }
+
+    function startEditingProjectOverlay(oid) {
+        if (!map) {
+            alert('La edición de Planos solo está disponible en el Modo Mapa 3D.');
+            return;
+        }
+
+        const overlay = overlaysData.find(o => o.id == oid);
+        if (!overlay) return;
+
+        isEditingOverlay = true;
+        selectedOverlayId = oid;
+        overlayCorners = [...overlay.corners]; // Clone
+
+        $('#btn-edit-overlay-pos').text('Done');
+        $('#btn-save-overlay-project').prop('disabled', false);
+        $('#editor-status').text('Arrastra las esquinas para ajustar el plano');
+        $('#overlay-opacity-slider').val(overlay.opacity || 0.7);
+
+        // Add handles
+        updateProjectOverlayMap();
+    }
+
+    function stopEditingProjectOverlay() {
+        isEditingOverlay = false;
+        $('#btn-edit-overlay-pos').text('📐 Ajustar Esquinas');
+        // Clean handles
+        document.querySelectorAll('.overlay-handle').forEach(e => e.remove());
+    }
+
+    function updateProjectOverlayMap() {
+        if (!map || !selectedOverlayId) return;
+        const sourceId = 'project-overlay-' + selectedOverlayId;
+
+        // 1. Update Image
+        if (map.getSource(sourceId)) {
+            map.getSource(sourceId).setCoordinates(overlayCorners);
+        }
+
+        // 2. Update Handles
+        document.querySelectorAll('.overlay-handle').forEach(e => e.remove());
+        overlayCorners.forEach((c, i) => {
+            const el = document.createElement('div');
+            el.className = 'overlay-handle';
+            el.style.cssText = 'width: 20px; height: 20px; background: white; border: 3px solid #667eea; border-radius: 50%; cursor: move; box-shadow: 0 0 5px rgba(0,0,0,0.5);';
+            new maplibregl.Marker(el, { draggable: false })
+                .setLngLat(c)
+                .addTo(map);
+        });
+    }
+
+    function saveProjectOverlay() {
+        if (!selectedOverlayId) return;
+        const overlay = overlaysData.find(o => o.id == selectedOverlayId);
+        if (!overlay) return;
+
+        // Update local object
+        overlay.corners = overlayCorners;
+        overlay.opacity = $('#overlay-opacity-slider').val();
+
+        saveProjectOverlayData(overlay, false);
+    }
+
+    function saveProjectOverlayData(overlay, isNew) {
+        $('#btn-save-overlay-project').prop('disabled', true).text('Guardando...');
+
+        $.post(masterplanEditorData.ajaxUrl, {
+            action: 'masterplan_save_project_overlay',
+            nonce: masterplanEditorData.nonce,
+            project_id: masterplanEditorData.projectId,
+            overlay_data: JSON.stringify(overlay)
+        }, function(res) {
+             $('#btn-save-overlay-project').prop('disabled', false).text('💾 Guardar Posición');
+             if (res.success) {
+                 if(isNew) location.reload();
+                 else {
+                     alert('Plano guardado');
+                     stopEditingProjectOverlay();
+                 }
+             } else {
+                 alert('Error');
+             }
+        });
+    }
+
+    function deleteProjectOverlay(oid) {
+        $.post(masterplanEditorData.ajaxUrl, {
+            action: 'masterplan_delete_project_overlay',
+            nonce: masterplanEditorData.nonce,
+            project_id: masterplanEditorData.projectId,
+            overlay_id: oid
+        }, function(res) {
+             if(res.success) location.reload();
+        });
+    }
+
 
     // Inicializar
     init();
