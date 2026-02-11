@@ -170,6 +170,10 @@ class Masterplan_Public
             // Logo
             $logo_id = get_post_meta($project_id, '_project_logo_id', true);
             $logo_url = $logo_id ? wp_get_attachment_url($logo_id) : '';
+
+            // Overlays
+            $overlays_meta = get_post_meta($project_id, '_project_overlays', true);
+            $overlays = is_array($overlays_meta) ? $overlays_meta : array();
         }
         else {
             $use_custom_image = false;
@@ -180,6 +184,7 @@ class Masterplan_Public
             $project_title = '';
             $project_location = '';
             $logo_url = '';
+            $overlays = array();
         }
 
         ob_start();
@@ -256,6 +261,7 @@ class Masterplan_Public
             useCustomImage: <?php echo $use_custom_image ? 'true' : 'false'; ?>,
             customImageUrl: '<?php echo esc_js($custom_image_url); ?>',
             logoUrl: '<?php echo esc_js($logo_url); ?>',
+            overlays: <?php echo json_encode($overlays); ?>,
             centerLat: <?php echo floatval($center_lat); ?>,
             centerLng: <?php echo floatval($center_lng); ?>,
             zoom: <?php echo intval($zoom); ?>

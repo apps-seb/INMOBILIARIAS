@@ -142,6 +142,10 @@ class Masterplan_Project_Editor
             );
         }
 
+        // Obtener Overlays del Proyecto
+        $overlays_meta = get_post_meta($project_id, '_project_overlays', true);
+        $overlays_data = is_array($overlays_meta) ? $overlays_meta : array();
+
 ?>
         <div class="wrap masterplan-editor-wrap">
             <div class="masterplan-editor-header">
@@ -171,6 +175,7 @@ class Masterplan_Project_Editor
                         <div class="tab-item active" data-tab="lots">📍 Lotes</div>
                         <div class="tab-item" data-tab="pois">🚩 Puntos</div>
                         <div class="tab-item" data-tab="routes">🛣️ Rutas</div>
+                        <div class="tab-item" data-tab="overlays">🗺️ Planos</div>
                     </div>
 
                     <!-- Pestaña LOTES -->
@@ -294,6 +299,39 @@ class Masterplan_Project_Editor
                         </div>
                     </div>
 
+                    <!-- Pestaña OVERLAYS -->
+                    <div class="tab-content" id="tab-content-overlays" style="display:none;">
+                        <div class="panel-actions">
+                            <button type="button" id="btn-new-project-overlay" class="button button-primary" style="width:100%">
+                                ➕ Nuevo Plano/Mapa
+                            </button>
+                        </div>
+                        <div class="lots-list" id="overlays-list">
+                            <?php if (empty($overlays_data)): ?>
+                                <div class="no-items">
+                                    <p>No hay Planos agregados</p>
+                                    <small>Sube una imagen (Blueprint, Mapa de sitio)</small>
+                                </div>
+                            <?php else: ?>
+                                <?php foreach ($overlays_data as $overlay): ?>
+                                    <div class="overlay-item" data-overlay-id="<?php echo $overlay['id']; ?>">
+                                        <div class="lot-info">
+                                            <strong><?php echo esc_html($overlay['title'] ?: 'Plano sin título'); ?></strong>
+                                        </div>
+                                        <div class="lot-actions">
+                                            <button type="button" class="btn-edit-project-overlay" title="Ajustar Posición">
+                                                🖼️
+                                            </button>
+                                            <button type="button" class="btn-delete-project-overlay" title="Eliminar Plano" style="color: #ef4444;">
+                                                🗑️
+                                            </button>
+                                        </div>
+                                    </div>
+                                <?php endforeach; ?>
+                            <?php endif; ?>
+                        </div>
+                    </div>
+
                 </div>
 
                 <!-- Panel derecho: Editor de mapa/imagen -->
@@ -354,6 +392,18 @@ class Masterplan_Project_Editor
                             <button type="button" id="btn-save-route" class="button button-primary" disabled>
                                 💾 Guardar Ruta
                             </button>
+                        </div>
+                        <div class="control-group" id="controls-overlays-project" style="display:none;">
+                            <button type="button" id="btn-edit-overlay-pos" class="button" disabled>
+                                📐 Ajustar Esquinas
+                            </button>
+                            <button type="button" id="btn-save-overlay-project" class="button button-primary" disabled>
+                                💾 Guardar Posición
+                            </button>
+                            <div style="display: flex; align-items: center; gap: 5px; font-size: 11px;">
+                                <label>Opacidad:</label>
+                                <input type="range" id="overlay-opacity-slider" min="0" max="1" step="0.1" value="0.7" style="width: 60px;">
+                            </div>
                         </div>
                         <div class="control-info">
                             <span id="editor-status">Selecciona un elemento para editar</span>
@@ -847,6 +897,7 @@ class Masterplan_Project_Editor
             lots: <?php echo json_encode($lots_data); ?>,
             pois: <?php echo json_encode($pois_data); ?>,
             routes: <?php echo json_encode($routes_data); ?>,
+            overlays: <?php echo json_encode($overlays_data); ?>,
             useCustomImage: <?php echo $use_custom_image == '1' ? 'true' : 'false'; ?>,
             customImageUrl: '<?php echo esc_js($custom_image_url); ?>',
             centerLat: <?php echo floatval($center_lat); ?>,
@@ -1324,5 +1375,69 @@ class Masterplan_Project_Editor
         $route_id = isset($_POST['route_id']) ? absint($_POST['route_id']) : 0;
         if(wp_delete_post($route_id, true)) wp_send_json_success();
         else wp_send_json_error();
+    }
+
+    /**
+     * AJAX: Guardar/Actualizar Project Overlay
+     */
+    public function save_project_overlay()
+    {
+        check_ajax_referer('masterplan_admin_nonce', 'nonce');
+        if (!current_user_can('manage_options')) wp_send_json_error();
+
+        $project_id = isset($_POST['project_id']) ? absint($_POST['project_id']) : 0;
+        $overlay_data = isset($_POST['overlay_data']) ? $_POST['overlay_data'] : ''; // JSON object string
+
+        if (!$project_id || !$overlay_data) wp_send_json_error(array('message' => 'Datos incompletos'));
+
+        $new_overlay = json_decode(stripslashes($overlay_data), true);
+        if (!$new_overlay || !isset($new_overlay['id'])) wp_send_json_error(array('message' => 'JSON inválido'));
+
+        // Obtener array actual
+        $overlays = get_post_meta($project_id, '_project_overlays', true);
+        if (!is_array($overlays)) $overlays = array();
+
+        // Buscar si existe para actualizar, sino agregar
+        $found = false;
+        foreach ($overlays as $k => $v) {
+            if ($v['id'] == $new_overlay['id']) {
+                $overlays[$k] = $new_overlay;
+                $found = true;
+                break;
+            }
+        }
+        if (!$found) {
+            $overlays[] = $new_overlay;
+        }
+
+        update_post_meta($project_id, '_project_overlays', $overlays);
+        wp_send_json_success(array('message' => 'Plano guardado'));
+    }
+
+    /**
+     * AJAX: Eliminar Project Overlay
+     */
+    public function delete_project_overlay()
+    {
+        check_ajax_referer('masterplan_admin_nonce', 'nonce');
+        if (!current_user_can('manage_options')) wp_send_json_error();
+
+        $project_id = isset($_POST['project_id']) ? absint($_POST['project_id']) : 0;
+        $overlay_id = isset($_POST['overlay_id']) ? sanitize_text_field($_POST['overlay_id']) : '';
+
+        if (!$project_id || !$overlay_id) wp_send_json_error();
+
+        $overlays = get_post_meta($project_id, '_project_overlays', true);
+        if (!is_array($overlays)) wp_send_json_error();
+
+        $new_overlays = array();
+        foreach ($overlays as $v) {
+            if ($v['id'] != $overlay_id) {
+                $new_overlays[] = $v;
+            }
+        }
+
+        update_post_meta($project_id, '_project_overlays', $new_overlays);
+        wp_send_json_success(array('message' => 'Plano eliminado'));
     }
 }

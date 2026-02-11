@@ -20,6 +20,7 @@ jQuery(document).ready(function ($) {
     const projectId = projectConfig.projectId || null;
     const useCustomImage = projectConfig.useCustomImage === true;
     const logoUrl = projectConfig.logoUrl || '';
+    const overlaysData = projectConfig.overlays || [];
 
     /**
      * Inicializar viewer según modo
@@ -220,6 +221,7 @@ jQuery(document).ready(function ($) {
                 poisData = pois;
                 routesData = routes;
 
+                renderProjectOverlays();
                 displayLotsOnMap(lots);
                 displayPOIsOnMap(pois);
                 displayRoutesOnMap(routes);
@@ -461,6 +463,28 @@ jQuery(document).ready(function ($) {
                      'line-blur': 1 // Soft edge for "glow" feel
                  },
                  layout: { 'line-join': 'round', 'line-cap': 'round' }
+             });
+        });
+    }
+
+    function renderProjectOverlays() {
+        if (!map || !overlaysData.length) return;
+
+        overlaysData.forEach(overlay => {
+             const sourceId = 'project-overlay-' + overlay.id;
+             if (map.getSource(sourceId)) return;
+
+             map.addSource(sourceId, {
+                 type: 'image',
+                 url: overlay.url,
+                 coordinates: overlay.corners
+             });
+
+             map.addLayer({
+                 id: sourceId,
+                 type: 'raster',
+                 source: sourceId,
+                 paint: { 'raster-opacity': parseFloat(overlay.opacity || 0.7) }
              });
         });
     }
