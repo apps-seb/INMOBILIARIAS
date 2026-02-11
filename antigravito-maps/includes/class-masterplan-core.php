@@ -106,6 +106,10 @@ class Masterplan_Core
         $this->loader->add_action('wp_ajax_masterplan_create_route', $project_editor, 'create_route');
         $this->loader->add_action('wp_ajax_masterplan_save_route_path', $project_editor, 'save_route_path');
         $this->loader->add_action('wp_ajax_masterplan_delete_route', $project_editor, 'delete_route');
+
+        // AJAX handlers para Project Overlays
+        $this->loader->add_action('wp_ajax_masterplan_save_project_overlay', $project_editor, 'save_project_overlay');
+        $this->loader->add_action('wp_ajax_masterplan_delete_project_overlay', $project_editor, 'delete_project_overlay');
     }
 
     /**

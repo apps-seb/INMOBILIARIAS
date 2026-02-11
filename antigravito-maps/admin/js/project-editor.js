@@ -1627,6 +1627,11 @@ jQuery(document).ready(function ($) {
     }
 
     function addProjectOverlay(att) {
+        if (!map) {
+            alert('La función de Planos/Mapas solo está disponible en el Modo Mapa 3D actualmente.');
+            return;
+        }
+
         // Default corners
         const center = map.getCenter();
         const d = 0.002; // Bigger default for project map
@@ -1651,6 +1656,11 @@ jQuery(document).ready(function ($) {
     }
 
     function startEditingProjectOverlay(oid) {
+        if (!map) {
+            alert('La edición de Planos solo está disponible en el Modo Mapa 3D.');
+            return;
+        }
+
         const overlay = overlaysData.find(o => o.id == oid);
         if (!overlay) return;
 
