@@ -195,7 +195,12 @@ jQuery(document).ready(function ($) {
             unit: 'metric'
         }), 'bottom-left');
 
-        map.on('load', function () {
+        // Pre-fetch data immediately
+        const lotsPromise = fetchLots();
+        const poisPromise = fetchPOIs();
+        const routesPromise = fetchRoutes();
+
+        map.on('load', async function () {
             map.addSource('terrain', {
                 type: 'raster-dem',
                 url: `https://api.maptiler.com/tiles/terrain-rgb/tiles.json?key=${masterplanPublic.apiKey}`,
@@ -207,9 +212,20 @@ jQuery(document).ready(function ($) {
                 exaggeration: 1.5
             });
 
-            loadLots();
-            loadPOIs();
-            loadRoutes();
+            // Wait for data and render
+            try {
+                const [lots, pois, routes] = await Promise.all([lotsPromise, poisPromise, routesPromise]);
+
+                lotsData = lots;
+                poisData = pois;
+                routesData = routes;
+
+                displayLotsOnMap(lots);
+                displayPOIsOnMap(pois);
+                displayRoutesOnMap(routes);
+            } catch (e) {
+                console.error('Error loading map data', e);
+            }
 
             // Zoom Scaling for POIs
             map.on('zoom', updatePoiScale);
@@ -243,16 +259,31 @@ jQuery(document).ready(function ($) {
         ctx = canvas.getContext('2d');
         backgroundImage = document.getElementById('masterplan-background');
 
-        backgroundImage.onload = function () {
+        // Pre-fetch
+        const lotsPromise = fetchLots();
+        const poisPromise = fetchPOIs();
+        const routesPromise = fetchRoutes();
+
+        const render = async () => {
             resizeCanvas();
-            loadLots();
-            loadPOIs();
+            try {
+                const [lots, pois, routes] = await Promise.all([lotsPromise, poisPromise, routesPromise]);
+                lotsData = lots;
+                poisData = pois;
+                routesData = routes;
+
+                redrawCanvas();
+                // Start pulse animation
+                setInterval(redrawCanvas, 100);
+            } catch(e) {
+                console.error('Error loading canvas data', e);
+            }
         };
 
+        backgroundImage.onload = render;
+
         if (backgroundImage.complete) {
-            resizeCanvas();
-            loadLots();
-            loadPOIs();
+            render();
         }
 
         window.addEventListener('resize', resizeCanvas);
@@ -557,59 +588,30 @@ jQuery(document).ready(function ($) {
     }
 
     /**
-     * Cargar lotes desde la API
+     * Fetch Helper: Lots
      */
-    function loadLots() {
+    function fetchLots() {
         let url = masterplanPublic.apiUrl + 'lots';
-        if (projectId) {
-            url += '?project_id=' + projectId;
-        }
-
-        $.ajax({
-            url: url,
-            type: 'GET',
-            success: function (lots) {
-                lotsData = lots;
-
-                if (useCustomImage && canvas) {
-                    redrawCanvas();
-                    // Animar pulse
-                    setInterval(redrawCanvas, 100);
-                } else if (map) {
-                    displayLotsOnMap(lots);
-                }
-            },
-            error: function () {
-                console.error('Error al cargar lotes');
-            }
-        });
+        if (projectId) url += '?project_id=' + projectId;
+        return $.get(url);
     }
 
     /**
-     * Cargar POIs desde la API
+     * Fetch Helper: POIs
      */
-    function loadPOIs() {
+    function fetchPOIs() {
         let url = masterplanPublic.apiUrl + 'pois';
-        if (projectId) {
-            url += '?project_id=' + projectId;
-        }
+        if (projectId) url += '?project_id=' + projectId;
+        return $.get(url);
+    }
 
-        $.ajax({
-            url: url,
-            type: 'GET',
-            success: function (pois) {
-                poisData = pois;
-
-                if (useCustomImage && canvas) {
-                    redrawCanvas();
-                } else if (map) {
-                    displayPOIsOnMap(pois);
-                }
-            },
-            error: function () {
-                console.error('Error al cargar POIs');
-            }
-        });
+    /**
+     * Fetch Helper: Routes
+     */
+    function fetchRoutes() {
+        let url = masterplanPublic.apiUrl + 'routes';
+        if (projectId) url += '?project_id=' + projectId;
+        return $.get(url);
     }
 
     /**
@@ -689,6 +691,13 @@ jQuery(document).ready(function ($) {
             }
         });
 
+        // Render Overlays
+        lots.forEach(lot => {
+            if (lot.overlay_url && lot.overlay_corners) {
+                renderFrontendOverlay(lot);
+            }
+        });
+
         addLotMarkers(lots);
 
         map.on('click', 'lots-fill', function (e) {
@@ -715,6 +724,30 @@ jQuery(document).ready(function ($) {
             }
             hoveredLotId = null;
         });
+    }
+
+    function renderFrontendOverlay(lot) {
+        const sourceId = 'overlay-' + lot.id;
+        // Check if exists
+        if (map.getSource(sourceId)) return;
+
+        map.addSource(sourceId, {
+            type: 'image',
+            url: lot.overlay_url,
+            coordinates: lot.overlay_corners
+        });
+
+        // Add before lots-fill to be underneath the polygon color (or above terrain)
+        // If we want it ON TOP of the terrain but UNDER the lot color:
+        // We look for 'lots-fill' layer ID.
+        const beforeLayer = map.getLayer('lots-fill') ? 'lots-fill' : undefined;
+
+        map.addLayer({
+            id: sourceId,
+            type: 'raster',
+            source: sourceId,
+            paint: { 'raster-opacity': 1 }
+        }, beforeLayer);
     }
 
     function addLotMarkers(lots) {

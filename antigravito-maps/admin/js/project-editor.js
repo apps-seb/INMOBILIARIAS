@@ -31,6 +31,12 @@ jQuery(document).ready(function ($) {
     let isDrawingRoute = false;
     let currentRoutePoints = [];
 
+    // Overlay
+    let isEditingOverlay = false;
+    let overlayCorners = []; // [TL, TR, BR, BL] (lngLat)
+    let overlayImage = null; // Image object or URL
+    let dragCornerIndex = -1;
+
     // ========================================
     // INICIALIZACIÓN
     // ========================================
@@ -116,6 +122,55 @@ jQuery(document).ready(function ($) {
                 updateTempRoute();
             }
         });
+
+        // Eventos Drag Overlay
+        map.on('mousedown', onMapMouseDown);
+        map.on('mousemove', onMapMouseMove);
+        map.on('mouseup', onMapMouseUp);
+    }
+
+    // --- Overlay Drag Logic (MapLibre) ---
+    function onMapMouseDown(e) {
+        if (!isEditingOverlay || !overlayCorners.length) return;
+
+        // Check if near a corner
+        const point = e.point;
+        const dists = overlayCorners.map((c, i) => {
+            const p = map.project(c);
+            const dx = p.x - point.x;
+            const dy = p.y - point.y;
+            return { idx: i, dist: Math.sqrt(dx*dx + dy*dy) };
+        });
+
+        const closest = dists.sort((a,b) => a.dist - b.dist)[0];
+        if (closest.dist < 20) { // 20px hit area
+            dragCornerIndex = closest.idx;
+            map.getCanvas().style.cursor = 'move';
+            e.preventDefault(); // Prevent map drag
+            map.dragPan.disable();
+        }
+    }
+
+    function onMapMouseMove(e) {
+        if (!isEditingOverlay) return;
+
+        if (dragCornerIndex !== -1) {
+            // Dragging
+            overlayCorners[dragCornerIndex] = [e.lngLat.lng, e.lngLat.lat];
+            updateMapOverlay();
+        } else {
+            // Hover cursor check
+            // (Optional optimization: only check if close)
+        }
+    }
+
+    function onMapMouseUp(e) {
+        if (dragCornerIndex !== -1) {
+            dragCornerIndex = -1;
+            map.getCanvas().style.cursor = '';
+            map.dragPan.enable();
+            saveOverlayState(); // Save locally/temp
+        }
     }
 
     function addPointMarker(lngLat) {
@@ -178,66 +233,72 @@ jQuery(document).ready(function ($) {
 
     function renderMapPolygons() {
         lotsData.forEach(function (lot) {
-            if (!lot.coordinates || lot.coordinates.length < 3) return;
+            // Render Polygon
+            if (lot.coordinates && lot.coordinates.length >= 3) {
+                const color = getStatusColor(lot.status);
+                const sourceId = 'lot-' + lot.id;
+                const coords = [...lot.coordinates, lot.coordinates[0]];
 
-            const color = getStatusColor(lot.status);
-            const sourceId = 'lot-' + lot.id;
+                if(!map.getSource(sourceId)) {
+                    map.addSource(sourceId, {
+                        type: 'geojson',
+                        data: {
+                            type: 'Feature',
+                            properties: { id: lot.id, lot_number: lot.lot_number },
+                            geometry: { type: 'Polygon', coordinates: [coords] }
+                        }
+                    });
 
-            // Cerrar el polígono
-            const coords = [...lot.coordinates, lot.coordinates[0]];
+                    map.addLayer({
+                        id: sourceId + '-fill',
+                        type: 'fill',
+                        source: sourceId,
+                        paint: { 'fill-color': color, 'fill-opacity': 0.4 }
+                    });
 
-            map.addSource(sourceId, {
-                type: 'geojson',
-                data: {
-                    type: 'Feature',
-                    properties: { id: lot.id, lot_number: lot.lot_number },
-                    geometry: {
-                        type: 'Polygon',
-                        coordinates: [coords]
-                    }
+                    map.addLayer({
+                        id: sourceId + '-line',
+                        type: 'line',
+                        source: sourceId,
+                        paint: { 'line-color': color, 'line-width': 2 }
+                    });
                 }
-            });
 
-            map.addLayer({
-                id: sourceId + '-fill',
-                type: 'fill',
-                source: sourceId,
-                paint: {
-                    'fill-color': color,
-                    'fill-opacity': 0.4
-                }
-            });
+                // Marker
+                const centroid = calculateCentroid(lot.coordinates);
+                const markerEl = document.createElement('div');
+                markerEl.className = 'lot-marker-admin';
+                markerEl.innerHTML = `<span class="marker-label">${lot.lot_number}</span>`;
+                markerEl.style.cssText = `
+                    background: ${color}; color: white; padding: 4px 10px;
+                    border-radius: 12px; font-size: 11px; font-weight: bold;
+                    cursor: pointer; box-shadow: 0 2px 6px rgba(0,0,0,0.3);
+                `;
+                new maplibregl.Marker(markerEl).setLngLat(centroid).addTo(map);
+            }
 
-            map.addLayer({
-                id: sourceId + '-line',
-                type: 'line',
-                source: sourceId,
-                paint: {
-                    'line-color': color,
-                    'line-width': 2
-                }
-            });
-
-            // Marcador con número
-            const centroid = calculateCentroid(lot.coordinates);
-            const markerEl = document.createElement('div');
-            markerEl.className = 'lot-marker-admin';
-            markerEl.innerHTML = `<span class="marker-label">${lot.lot_number}</span>`;
-            markerEl.style.cssText = `
-                background: ${color};
-                color: white;
-                padding: 4px 10px;
-                border-radius: 12px;
-                font-size: 11px;
-                font-weight: bold;
-                cursor: pointer;
-                box-shadow: 0 2px 6px rgba(0,0,0,0.3);
-            `;
-
-            new maplibregl.Marker(markerEl)
-                .setLngLat(centroid)
-                .addTo(map);
+            // Render Overlay if exists
+            if (lot.overlay_url && lot.overlay_corners) {
+                renderMapOverlayForLot(lot);
+            }
         });
+    }
+
+    function renderMapOverlayForLot(lot) {
+        const sourceId = 'overlay-' + lot.id;
+        if (map.getSource(sourceId)) return;
+
+        map.addSource(sourceId, {
+            type: 'image',
+            url: lot.overlay_url,
+            coordinates: lot.overlay_corners
+        });
+        map.addLayer({
+            id: sourceId,
+            type: 'raster',
+            source: sourceId,
+            paint: { 'raster-opacity': 0.9 }
+        }, 'lots-fill'); // Below lots fill if possible, or just add
     }
 
     function renderMapPOIs() {
@@ -740,7 +801,38 @@ jQuery(document).ready(function ($) {
         $('#btn-clear-polygon').on('click', clearPolygon);
 
         // Botón guardar
-        $('#btn-save-polygon').on('click', savePolygon);
+        $('#btn-save-polygon').on('click', function() {
+            if (isEditingOverlay) {
+                saveOverlay();
+            } else {
+                savePolygon();
+            }
+        });
+
+        // Overlay Buttons
+        $('#btn-edit-overlay').on('click', function() {
+            if (isEditingOverlay) {
+                stopEditingOverlay();
+            } else {
+                startEditingOverlay();
+            }
+        });
+
+        $('#btn-upload-overlay').on('click', function() {
+            if (!selectedLotId) return;
+            const frame = wp.media({ title: 'Imagen Overlay', button: { text: 'Usar' }, multiple: false });
+            frame.on('select', () => {
+                const att = frame.state().get('selection').first().toJSON();
+                setOverlayImage(att.id, att.url);
+            });
+            frame.open();
+        });
+
+        $('#btn-remove-overlay').on('click', function() {
+            if(confirm('¿Eliminar overlay?')) {
+                removeOverlay();
+            }
+        });
 
         // Nuevo lote
         $('#btn-new-lot').on('click', function () {
@@ -894,6 +986,8 @@ jQuery(document).ready(function ($) {
 
     function selectLot(lotId) {
         selectedLotId = lotId;
+        isEditingOverlay = false;
+        $('#controls-overlay').hide();
 
         // UI: resaltar lote seleccionado
         $('.lot-item').removeClass('active');
@@ -902,14 +996,21 @@ jQuery(document).ready(function ($) {
         // Habilitar controles
         $('#btn-draw-polygon').prop('disabled', false);
         $('#btn-clear-polygon').prop('disabled', false);
-        $('#editor-status').text('Lote seleccionado: Haz clic en "Dibujar Polígono"');
+        $('#btn-edit-overlay').prop('disabled', false);
 
-        // Cargar puntos existentes si los hay
         const lot = lotsData.find(l => l.id == lotId);
+        $('#editor-status').text(lot ? 'Lote: ' + lot.title : 'Lote seleccionado');
+
         if (lot && lot.coordinates) {
             currentPoints = [...lot.coordinates];
         } else {
             currentPoints = [];
+        }
+
+        // Reset overlay editing
+        if (map) {
+            // Remove temp handles
+            document.querySelectorAll('.overlay-handle').forEach(e => e.remove());
         }
     }
 
@@ -1005,28 +1106,160 @@ jQuery(document).ready(function ($) {
             },
             success: function (response) {
                 if (response.success) {
-                    // Actualizar datos locales
                     const lotIndex = lotsData.findIndex(l => l.id == selectedLotId);
-                    if (lotIndex !== -1) {
-                        lotsData[lotIndex].coordinates = currentPoints;
-                    }
-
-                    alert('✅ Polígono guardado exitosamente');
-                    $('#editor-status').text('Polígono guardado');
-
-                    // Recargar página para refrescar visualización
+                    if (lotIndex !== -1) lotsData[lotIndex].coordinates = currentPoints;
+                    alert('✅ Polígono guardado');
                     location.reload();
                 } else {
-                    alert('Error: ' + (response.data.message || 'Error desconocido'));
+                    alert('Error: ' + response.data.message);
                 }
-            },
-            error: function () {
-                alert('Error de conexión');
             },
             complete: function () {
                 $('#btn-save-polygon').prop('disabled', false).text('💾 Guardar');
             }
         });
+    }
+
+    // --- OVERLAY FUNCTIONS ---
+
+    function startEditingOverlay() {
+        if (!selectedLotId) return;
+        isEditingOverlay = true;
+        $('#controls-overlay').show();
+        $('#btn-edit-overlay').text('Done');
+        $('#btn-save-polygon').prop('disabled', false); // Allow saving
+
+        const lot = lotsData.find(l => l.id == selectedLotId);
+        if (lot && lot.overlay_url) {
+            overlayImage = { url: lot.overlay_url, id: lot.overlay_id }; // Need id if saved
+            if (lot.overlay_corners) {
+                overlayCorners = lot.overlay_corners;
+            } else {
+                // Default corners based on lot bounds or center
+                // Simple default: around center
+                const center = map.getCenter();
+                const d = 0.0005;
+                overlayCorners = [
+                    [center.lng - d, center.lat + d], // TL
+                    [center.lng + d, center.lat + d], // TR
+                    [center.lng + d, center.lat - d], // BR
+                    [center.lng - d, center.lat - d]  // BL
+                ];
+            }
+            updateMapOverlay();
+        } else {
+            $('#editor-status').text('Sube una imagen para el overlay');
+        }
+    }
+
+    function stopEditingOverlay() {
+        isEditingOverlay = false;
+        $('#controls-overlay').hide();
+        $('#btn-edit-overlay').text('🖼️ Overlay');
+        // Clean up handles
+        document.querySelectorAll('.overlay-handle').forEach(e => e.remove());
+    }
+
+    function setOverlayImage(id, url) {
+        const lot = lotsData.find(l => l.id == selectedLotId);
+        if(!lot) return;
+
+        lot.overlay_url = url;
+        lot.overlay_id = id;
+
+        // Init corners if empty
+        if (!overlayCorners || !overlayCorners.length) {
+             const center = map.getCenter();
+             const d = 0.0005;
+             overlayCorners = [
+                [center.lng - d, center.lat + d],
+                [center.lng + d, center.lat + d],
+                [center.lng + d, center.lat - d],
+                [center.lng - d, center.lat - d]
+             ];
+        }
+
+        updateMapOverlay();
+    }
+
+    function updateMapOverlay() {
+        if (!map) return;
+        const sourceId = 'overlay-edit';
+
+        // 1. Image Source
+        if (map.getSource(sourceId)) {
+            map.getSource(sourceId).setCoordinates(overlayCorners);
+        } else {
+            // Only add if URL exists
+            const lot = lotsData.find(l => l.id == selectedLotId);
+            const url = (lot && lot.overlay_url) ? lot.overlay_url : '';
+            if (url) {
+                map.addSource(sourceId, {
+                    type: 'image',
+                    url: url,
+                    coordinates: overlayCorners
+                });
+                map.addLayer({
+                    id: sourceId,
+                    type: 'raster',
+                    source: sourceId,
+                    paint: { 'raster-opacity': 0.8 }
+                });
+            }
+        }
+
+        // 2. Corner Handles
+        document.querySelectorAll('.overlay-handle').forEach(e => e.remove());
+        overlayCorners.forEach((c, i) => {
+            const el = document.createElement('div');
+            el.className = 'overlay-handle';
+            el.style.cssText = 'width: 15px; height: 15px; background: white; border: 2px solid red; border-radius: 50%; cursor: move;';
+            new maplibregl.Marker(el, { draggable: false }) // We handle drag manually
+                .setLngLat(c)
+                .addTo(map);
+        });
+    }
+
+    function saveOverlay() {
+        if (!selectedLotId) return;
+        const lot = lotsData.find(l => l.id == selectedLotId);
+
+        $('#btn-save-polygon').prop('disabled', true).text('Guardando Overlay...');
+
+        $.post(masterplanEditorData.ajaxUrl, {
+            action: 'masterplan_save_lot_overlay',
+            nonce: masterplanEditorData.nonce,
+            lot_id: selectedLotId,
+            overlay_id: lot.overlay_id || '',
+            corners: JSON.stringify(overlayCorners)
+        }, function(res) {
+            $('#btn-save-polygon').prop('disabled', false).text('💾 Guardar');
+            if (res.success) {
+                // Update local
+                lot.overlay_corners = overlayCorners;
+                alert('Overlay guardado');
+                stopEditingOverlay();
+                location.reload();
+            } else {
+                alert('Error');
+            }
+        });
+    }
+
+    function removeOverlay() {
+        if (!selectedLotId) return;
+        overlayCorners = [];
+        overlayImage = null;
+        const lot = lotsData.find(l => l.id == selectedLotId);
+        lot.overlay_url = '';
+        lot.overlay_id = '';
+        lot.overlay_corners = null;
+
+        if (map.getLayer('overlay-edit')) map.removeLayer('overlay-edit');
+        if (map.getSource('overlay-edit')) map.removeSource('overlay-edit');
+        document.querySelectorAll('.overlay-handle').forEach(e => e.remove());
+
+        saveOverlay(); // Save emptiness
     }
 
     // --- POIS ---

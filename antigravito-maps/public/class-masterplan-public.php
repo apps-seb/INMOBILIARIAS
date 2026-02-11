@@ -161,8 +161,8 @@ class Masterplan_Public
             $use_custom_image = get_post_meta($project_id, '_project_use_custom_image', true) == '1';
             $custom_image_id = get_post_meta($project_id, '_project_custom_image_id', true);
             $custom_image_url = $custom_image_id ? wp_get_attachment_url($custom_image_id) : '';
-            $center_lat = get_post_meta($project_id, '_project_center_lat', true) ?: get_option('masterplan_map_center_lat', '4.5709');
-            $center_lng = get_post_meta($project_id, '_project_center_lng', true) ?: get_option('masterplan_map_center_lng', '-74.2973');
+            $center_lat = get_post_meta($project_id, '_project_center_lat', true) ?: get_option('masterplan_map_center_lat', '2.4568');
+            $center_lng = get_post_meta($project_id, '_project_center_lng', true) ?: get_option('masterplan_map_center_lng', '-76.6310');
             $zoom = get_post_meta($project_id, '_project_zoom', true) ?: 16;
             $project_title = $project->post_title;
             $project_location = get_post_meta($project_id, '_project_location', true);
@@ -174,8 +174,8 @@ class Masterplan_Public
         else {
             $use_custom_image = false;
             $custom_image_url = '';
-            $center_lat = get_option('masterplan_map_center_lat', '4.5709');
-            $center_lng = get_option('masterplan_map_center_lng', '-74.2973');
+            $center_lat = get_option('masterplan_map_center_lat', '2.4568');
+            $center_lng = get_option('masterplan_map_center_lng', '-76.6310');
             $zoom = get_option('masterplan_map_zoom', '14');
             $project_title = '';
             $project_location = '';
@@ -232,11 +232,11 @@ class Masterplan_Public
                         </svg>
                     </button>
                     <button class="mp-control-btn active" id="btn-toggle-routes" title="Rutas / Vías">
-                        <!-- Luxury Path/Route Icon -->
+                        <!-- Luxury Road/Highway Icon (Curving with dash) -->
                         <svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
-                            <path d="M19 19c-1.2-1.2-2.8-1.5-3.8-1.5-1.5 0-3.5 1.5-5.2 2-1.7.5-3.3-.8-3-2 .3-1.2 2.5-1 3.5-.5 1 .5 2.5 1.5 4 1.5 1.2 0 2.8-.8 4-2 .2-.2.3-.5.5-.7"></path>
-                            <path d="M4 5c1.2 1.2 2.8 1.5 3.8 1.5 1.5 0 3.5-1.5 5.2-2 1.7-.5 3.3.8 3 2-.3 1.2-2.5 1-3.5.5-1-.5-2.5-1.5-4-1.5-1.2 0-2.8.8-4 2-.2.2-.3.5-.5.7"></path>
-                            <circle cx="12" cy="12" r="2"></circle>
+                            <path d="M18 20V4" stroke-width="1.5" stroke-linecap="round"></path>
+                            <path d="M6 20V4" stroke-width="1.5" stroke-linecap="round"></path>
+                            <line x1="12" y1="20" x2="12" y2="4" stroke-width="1.5" stroke-dasharray="3 3"></line>
                         </svg>
                     </button>
                     <button class="mp-control-btn active" id="btn-toggle-pois" title="Puntos de Interés">
@@ -345,8 +345,8 @@ class Masterplan_Public
             'apiUrl' => rest_url('masterplan/v1/'),
             'nonce' => wp_create_nonce('masterplan_contact_nonce'),
             'apiKey' => get_option('masterplan_api_key', ''),
-            'centerLat' => get_option('masterplan_map_center_lat', '4.5709'),
-            'centerLng' => get_option('masterplan_map_center_lng', '-74.2973'),
+            'centerLat' => get_option('masterplan_map_center_lat', '2.4568'),
+            'centerLng' => get_option('masterplan_map_center_lng', '-76.6310'),
             'zoom' => get_option('masterplan_map_zoom', '14'),
             'whatsappNumber' => get_option('masterplan_whatsapp_number', ''),
             'currency' => 'COP',

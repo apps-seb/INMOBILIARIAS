@@ -117,6 +117,11 @@ class Masterplan_Project_CPT
         $location_name = get_post_meta($post->ID, '_project_location_name', true);
         $center_lat = get_post_meta($post->ID, '_project_center_lat', true);
         $center_lng = get_post_meta($post->ID, '_project_center_lng', true);
+
+        // Default coordinates if not set
+        if (!$center_lat) $center_lat = '2.4568';
+        if (!$center_lng) $center_lng = '-76.6310';
+
         $zoom = get_post_meta($post->ID, '_project_zoom', true) ?: 16;
 
 ?>
