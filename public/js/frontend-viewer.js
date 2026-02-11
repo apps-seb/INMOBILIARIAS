@@ -13,11 +13,13 @@ jQuery(document).ready(function ($) {
     let backgroundImage = null;
     let lotsData = [];
     let poisData = [];
+    let routesData = [];
 
     // Configuración del proyecto (inyectada por PHP)
     const projectConfig = window.masterplanProjectConfig || {};
     const projectId = projectConfig.projectId || null;
     const useCustomImage = projectConfig.useCustomImage === true;
+    const logoUrl = projectConfig.logoUrl || '';
 
     /**
      * Inicializar viewer según modo
@@ -42,10 +44,69 @@ jQuery(document).ready(function ($) {
              });
         }
 
+        // Render UI Controls
+        renderUiControls();
+
         if (useCustomImage && projectConfig.customImageUrl) {
             initImageViewer();
         } else if ($('#masterplan-public-map').length) {
             initMap();
+        }
+    }
+
+    function renderUiControls() {
+        // Render Logo
+        if (logoUrl) {
+            $('#masterplan-logo-container').html(`<img src="${logoUrl}" class="masterplan-project-logo" alt="Project Logo">`);
+        }
+
+        // Bind Control Buttons
+        $('#btn-toggle-project').on('click', function() {
+            // Reset to initial view (Center of project)
+            if (map) {
+                map.flyTo({
+                    center: [parseFloat(projectConfig.centerLng), parseFloat(projectConfig.centerLat)],
+                    zoom: parseFloat(projectConfig.zoom),
+                    pitch: 60,
+                    bearing: 0,
+                    essential: true
+                });
+            } else if (canvas) {
+                // Reset canvas pan/zoom if implemented (currently static)
+            }
+        });
+
+        $('#btn-toggle-routes').on('click', function() {
+            $(this).toggleClass('active');
+            const visible = $(this).hasClass('active');
+            toggleRoutesVisibility(visible);
+        });
+
+        $('#btn-toggle-pois').on('click', function() {
+            $(this).toggleClass('active');
+            const visible = $(this).hasClass('active');
+            togglePoisVisibility(visible);
+        });
+    }
+
+    function toggleRoutesVisibility(visible) {
+        if (map) {
+            routesData.forEach(route => {
+                const layerId = 'route-' + route.id;
+                if (map.getLayer(layerId)) {
+                    map.setLayoutProperty(layerId, 'visibility', visible ? 'visible' : 'none');
+                }
+            });
+        } else if (canvas) {
+            redrawCanvas(); // Canvas redraw checks button state or global flag
+        }
+    }
+
+    function togglePoisVisibility(visible) {
+        if (visible) {
+            $('.poi-marker-wrapper, .poi-overlay-container').show();
+        } else {
+            $('.poi-marker-wrapper, .poi-overlay-container').hide();
         }
     }
 
@@ -96,6 +157,7 @@ jQuery(document).ready(function ($) {
 
             loadLots();
             loadPOIs();
+            loadRoutes();
 
             // Zoom Scaling for POIs
             map.on('zoom', updatePoiScale);
@@ -191,8 +253,35 @@ jQuery(document).ready(function ($) {
             drawLotOnCanvas(lot);
         });
 
+        // Dibujar Rutas (si están activas)
+        if ($('#btn-toggle-routes').hasClass('active')) {
+            drawRoutesOnCanvas();
+        }
+
         // Actualizar posiciones de POIs en Overlay
         updatePoiOverlayPositions();
+    }
+
+    function drawRoutesOnCanvas() {
+        if (!routesData || routesData.length === 0) return;
+        const offsetX = parseFloat(canvas.dataset.offsetX);
+        const offsetY = parseFloat(canvas.dataset.offsetY);
+        const drawWidth = parseFloat(canvas.dataset.drawWidth);
+        const drawHeight = parseFloat(canvas.dataset.drawHeight);
+
+        routesData.forEach(route => {
+            if (!route.coordinates || route.coordinates.length < 2) return;
+
+            ctx.beginPath();
+            route.coordinates.forEach((point, index) => {
+                const x = offsetX + (point[0] * drawWidth);
+                const y = offsetY + (point[1] * drawHeight);
+                if (index === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
+            });
+            ctx.strokeStyle = route.color;
+            ctx.lineWidth = route.width;
+            ctx.stroke();
+        });
     }
 
     // Ya no dibujamos POIs en el canvas, usamos DOM Overlay
@@ -237,6 +326,48 @@ jQuery(document).ready(function ($) {
                 // Ajustaremos con transform.
                 el.style.transform = 'translate(-50%, -100%)';
             }
+        });
+    }
+
+    /**
+     * Cargar Rutas desde la API
+     */
+    function loadRoutes() {
+        let url = masterplanPublic.apiUrl + 'routes';
+        if (projectId) {
+            url += '?project_id=' + projectId;
+        }
+
+        $.ajax({
+            url: url,
+            type: 'GET',
+            success: function (routes) {
+                routesData = routes;
+                if (useCustomImage && canvas) {
+                    redrawCanvas();
+                } else if (map) {
+                    displayRoutesOnMap(routes);
+                }
+            },
+            error: function () {
+                console.error('Error al cargar Rutas');
+            }
+        });
+    }
+
+    function displayRoutesOnMap(routes) {
+        routes.forEach(route => {
+             if(!route.coordinates || route.coordinates.length < 2) return;
+             const sourceId = 'route-' + route.id;
+             map.addSource(sourceId, {
+                 type: 'geojson',
+                 data: { type: 'Feature', geometry: { type: 'LineString', coordinates: route.coordinates } }
+             });
+             map.addLayer({
+                 id: sourceId, type: 'line', source: sourceId,
+                 paint: { 'line-color': route.color, 'line-width': parseInt(route.width) },
+                 layout: { 'line-join': 'round', 'line-cap': 'round' }
+             });
         });
     }
 
@@ -633,10 +764,13 @@ jQuery(document).ready(function ($) {
         let scale = 0.4 + 0.6 * ((zoom - 12) / (17 - 12));
         scale = Math.max(0.4, Math.min(1.2, scale)); // Allow slight overscale at very close zoom
 
+        // Apply scale ONLY, no translation. MapLibre handles the position of the wrapper.
+        // The wrapper is anchored at 'bottom', so the bottom-center of the wrapper is at the lat/lng.
+        // We scale the content relative to that bottom-center anchor.
         $('.poi-scalable-content').css({
             'transform': `scale(${scale})`,
             'transform-origin': 'bottom center',
-            'transition': 'transform 0.1s ease-out'
+            'transition': 'transform 0.1s cubic-bezier(0.4, 0, 0.2, 1)'
         });
     }
 

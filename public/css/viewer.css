@@ -149,6 +149,81 @@
     visibility: visible;
 }
 
+/* UI Controls (Top Left & Bottom Center) */
+.masterplan-ui-controls {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    pointer-events: none;
+    z-index: 500;
+}
+
+#masterplan-logo-container {
+    position: absolute;
+    top: 20px;
+    left: 20px;
+    z-index: 501;
+    pointer-events: auto;
+}
+
+.masterplan-project-logo {
+    max-width: 180px;
+    max-height: 80px;
+    filter: drop-shadow(0 4px 6px rgba(0,0,0,0.3));
+    transition: transform 0.3s ease;
+}
+
+.masterplan-project-logo:hover {
+    transform: scale(1.05);
+}
+
+.masterplan-control-bar {
+    position: absolute;
+    bottom: 30px;
+    left: 50%;
+    transform: translateX(-50%);
+    display: flex;
+    gap: 15px;
+    background: rgba(255, 255, 255, 0.85);
+    backdrop-filter: blur(10px);
+    -webkit-backdrop-filter: blur(10px);
+    padding: 10px 20px;
+    border-radius: 50px;
+    box-shadow: 0 10px 30px rgba(0,0,0,0.15), 0 4px 6px rgba(0,0,0,0.05);
+    z-index: 501;
+    pointer-events: auto;
+    border: 1px solid rgba(255, 255, 255, 0.5);
+}
+
+.mp-control-btn {
+    background: none;
+    border: none;
+    font-size: 14px;
+    font-weight: 700;
+    color: #64748b;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 8px 16px;
+    border-radius: 20px;
+    transition: all 0.2s ease;
+}
+
+.mp-control-btn:hover {
+    background: rgba(0,0,0,0.05);
+    color: #334155;
+    transform: translateY(-2px);
+}
+
+.mp-control-btn.active {
+    background: #3b82f6;
+    color: white;
+    box-shadow: 0 4px 12px rgba(59, 130, 246, 0.4);
+}
+
 /* Off-Canvas Sidebar */
 .masterplan-sidebar {
     position: fixed;
@@ -466,16 +541,22 @@
 
 /* Base POI Marker */
 .poi-marker {
-    position: absolute; /* Para modo imagen */
-    /* En MapLibre es 'relative' dentro del contenedor que crea la librería */
+    position: relative; /* Default for MapLibre Wrapper content */
     display: flex;
     flex-direction: column;
     align-items: center;
     justify-content: flex-end;
     cursor: pointer;
     pointer-events: auto;
-    transition: transform 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+    /* Removed default transition/transform that conflicts with MapLibre positioning */
     z-index: 100;
+    /* Ensure no offset unless explicitly handled by wrapper */
+}
+
+/* For Custom Image Mode, we absolutely position the wrapper or the marker */
+.poi-overlay-container .poi-marker {
+    position: absolute; /* Only for image mode overlay */
+    transform: translate(-50%, -100%); /* Image mode needs this */
 }
 
 .poi-marker:hover {

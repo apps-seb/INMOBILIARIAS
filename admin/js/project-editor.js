@@ -25,6 +25,12 @@ jQuery(document).ready(function ($) {
     let activeTab = 'lots';
     let currentPoiMarker = null; // Para modo mapa
 
+    // Rutas
+    let routesData = masterplanEditorData.routes || [];
+    let selectedRouteId = null;
+    let isDrawingRoute = false;
+    let currentRoutePoints = [];
+
     // ========================================
     // INICIALIZACIÓN
     // ========================================
@@ -79,6 +85,7 @@ jQuery(document).ready(function ($) {
             // Renderizar polígonos existentes
             renderMapPolygons();
             renderMapPOIs();
+            renderMapRoutes();
 
         });
 
@@ -102,6 +109,11 @@ jQuery(document).ready(function ($) {
             } else if (activeTab === 'pois' && isPlacingPoi) {
                 // Lógica de ubicación de POI
                 updatePoiLocation(e.lngLat.lat, e.lngLat.lng);
+            } else if (activeTab === 'routes' && isDrawingRoute) {
+                // Lógica de trazado de ruta
+                const point = [e.lngLat.lng, e.lngLat.lat];
+                currentRoutePoints.push(point);
+                updateTempRoute();
             }
         });
     }
@@ -351,9 +363,17 @@ jQuery(document).ready(function ($) {
         // Render POIs using DOM Overlay
         updatePoiOverlayPositions();
 
+        // Renderizar Rutas
+        renderImageRoutes();
+
         // Dibujar polígono temporal
-        if (currentPoints.length > 0) {
+        if (activeTab === 'lots' && currentPoints.length > 0) {
             drawPolygonOnCanvas(currentPoints, '#667eea', true);
+        }
+
+        // Dibujar ruta temporal
+        if (activeTab === 'routes' && currentRoutePoints.length > 0) {
+            drawRouteOnCanvas(currentRoutePoints, '#ffffff', true);
         }
 
         // Dibujar marcador de POI actual si se está colocando (TEMP)
@@ -584,7 +604,7 @@ jQuery(document).ready(function ($) {
     }
 
     function onCanvasClick(e) {
-        if (!isDrawing && !isPlacingPoi) return;
+        if (!isDrawing && !isPlacingPoi && !isDrawingRoute) return;
 
         const rect = canvas.getBoundingClientRect();
         const clickX = e.clientX - rect.left;
@@ -619,6 +639,9 @@ jQuery(document).ready(function ($) {
             }
         } else if (activeTab === 'pois' && isPlacingPoi) {
              updatePoiLocation(relY, relX); // Y=Lat, X=Lng
+        } else if (activeTab === 'routes' && isDrawingRoute) {
+             currentRoutePoints.push([relX, relY]);
+             redrawCanvas();
         }
     }
 
@@ -670,13 +693,21 @@ jQuery(document).ready(function ($) {
             if (tab === 'lots') {
                 $('#controls-lots').show();
                 $('#controls-pois').hide();
+                $('#controls-routes').hide();
                 $('#editor-status').text('Modo Lotes activo');
-                stopDrawing();
-            } else {
+                stopDrawing(); stopPlacingPoi(); stopDrawingRoute();
+            } else if (tab === 'pois') {
                 $('#controls-lots').hide();
                 $('#controls-pois').show();
+                $('#controls-routes').hide();
                 $('#editor-status').text('Modo Puntos de Interés activo');
-                stopPlacingPoi();
+                stopDrawing(); stopPlacingPoi(); stopDrawingRoute();
+            } else if (tab === 'routes') {
+                $('#controls-lots').hide();
+                $('#controls-pois').hide();
+                $('#controls-routes').show();
+                $('#editor-status').text('Modo Rutas activo');
+                stopDrawing(); stopPlacingPoi(); stopDrawingRoute();
             }
         });
 
@@ -813,6 +844,45 @@ jQuery(document).ready(function ($) {
                 complete: function () { $submit.prop('disabled', false).text('Crear POI'); }
             });
         });
+
+        // --- RUTAS ---
+        $(document).on('click', '.route-item', function (e) {
+            if ($(e.target).closest('.lot-actions').length) return;
+            selectRoute($(this).data('route-id'));
+        });
+
+        $(document).on('click', '.btn-draw-route', function (e) {
+            e.stopPropagation();
+            const rid = $(this).closest('.route-item').data('route-id');
+            selectRoute(rid);
+            startDrawingRoute();
+        });
+
+         $(document).on('click', '.btn-delete-route', function (e) {
+             e.stopPropagation();
+             const rid = $(this).closest('.route-item').data('route-id');
+             if(confirm('¿Eliminar ruta?')) {
+                 $.post(masterplanEditorData.ajaxUrl, {
+                     action: 'masterplan_delete_route',
+                     route_id: rid,
+                     nonce: masterplanEditorData.nonce
+                 }, function() { location.reload(); });
+             }
+        });
+
+        $('#btn-new-route').on('click', function() { $('#new-route-modal').show(); });
+        $('#new-route-form').on('submit', function(e) {
+            e.preventDefault();
+            $.post(masterplanEditorData.ajaxUrl, $(this).serialize() + '&action=masterplan_create_route&nonce=' + masterplanEditorData.nonce, function(res) {
+                if (res.success) location.reload(); else alert('Error');
+            });
+        });
+
+        $('#btn-draw-route').on('click', function() {
+            if(isDrawingRoute) stopDrawingRoute(); else startDrawingRoute();
+        });
+        $('#btn-clear-route').on('click', clearRoute);
+        $('#btn-save-route').on('click', saveRoute);
     }
 
 
@@ -1091,6 +1161,138 @@ jQuery(document).ready(function ($) {
                 }
             }
         });
+    }
+
+    // ========================================
+    // MANEJO DE RUTAS
+    // ========================================
+
+    function selectRoute(rid) {
+        selectedRouteId = rid;
+        $('.route-item').removeClass('active');
+        $(`.route-item[data-route-id="${rid}"]`).addClass('active');
+
+        $('#btn-draw-route').prop('disabled', false);
+        $('#btn-clear-route').prop('disabled', false);
+        $('#editor-status').text('Ruta seleccionada');
+
+        const route = routesData.find(r => r.id == rid);
+        if (route && route.coordinates) {
+            currentRoutePoints = [...route.coordinates];
+        } else {
+            currentRoutePoints = [];
+        }
+    }
+
+    function startDrawingRoute() {
+        if (!selectedRouteId) return;
+        isDrawingRoute = true;
+        currentRoutePoints = []; // Reset for new draw or continue? Usually reset or edit. Simple: reset.
+
+        $('#btn-draw-route').text('🛑 Detener');
+        $('#btn-save-route').prop('disabled', false);
+        $('#editor-status').text('Trazando ruta... Click para añadir puntos');
+
+        if (map) {
+             if (map.getSource('temp-route')) {
+                 map.removeLayer('temp-route-line');
+                 map.removeSource('temp-route');
+             }
+        }
+        if (canvas) redrawCanvas();
+    }
+
+    function stopDrawingRoute() {
+        isDrawingRoute = false;
+        $('#btn-draw-route').text('✏️ Trazar Ruta');
+    }
+
+    function updateTempRoute() {
+        if (map) {
+            const sourceId = 'temp-route';
+            if (map.getSource(sourceId)) {
+                map.getSource(sourceId).setData({
+                    type: 'Feature', geometry: { type: 'LineString', coordinates: currentRoutePoints }
+                });
+            } else {
+                map.addSource(sourceId, {
+                    type: 'geojson',
+                    data: { type: 'Feature', geometry: { type: 'LineString', coordinates: currentRoutePoints } }
+                });
+                map.addLayer({
+                    id: sourceId + '-line', type: 'line', source: sourceId,
+                    paint: { 'line-color': '#ffffff', 'line-width': 4, 'line-dasharray': [2, 1] }
+                });
+            }
+        }
+        if (canvas) redrawCanvas();
+    }
+
+    function clearRoute() {
+        currentRoutePoints = [];
+        if(map && map.getSource('temp-route')) {
+            map.removeLayer('temp-route-line'); map.removeSource('temp-route');
+        }
+        if(canvas) redrawCanvas();
+    }
+
+    function saveRoute() {
+        if (!selectedRouteId || currentRoutePoints.length < 2) return;
+        $('#btn-save-route').prop('disabled', true).text('Guardando...');
+
+        $.post(masterplanEditorData.ajaxUrl, {
+            action: 'masterplan_save_route_path',
+            nonce: masterplanEditorData.nonce,
+            route_id: selectedRouteId,
+            coordinates: JSON.stringify(currentRoutePoints)
+        }, function(res) {
+            if(res.success) location.reload(); else alert('Error');
+        });
+    }
+
+    function renderMapRoutes() {
+        routesData.forEach(route => {
+             if(!route.coordinates || route.coordinates.length < 2) return;
+             const sourceId = 'route-' + route.id;
+             map.addSource(sourceId, {
+                 type: 'geojson',
+                 data: { type: 'Feature', geometry: { type: 'LineString', coordinates: route.coordinates } }
+             });
+             map.addLayer({
+                 id: sourceId, type: 'line', source: sourceId,
+                 paint: { 'line-color': route.color, 'line-width': parseInt(route.width) }
+             });
+        });
+    }
+
+    function renderImageRoutes() {
+        if (!canvas) return;
+        routesData.forEach(route => {
+             if(!route.coordinates || route.coordinates.length < 2) return;
+             // Don't draw current if drawing
+             if (route.id == selectedRouteId && isDrawingRoute) return;
+             drawRouteOnCanvas(route.coordinates, route.color, false, route.width);
+        });
+    }
+
+    function drawRouteOnCanvas(points, color, isTemp, width) {
+        if (points.length < 2) return;
+        const offsetX = parseFloat(canvas.dataset.offsetX);
+        const offsetY = parseFloat(canvas.dataset.offsetY);
+        const drawWidth = parseFloat(canvas.dataset.drawWidth);
+        const drawHeight = parseFloat(canvas.dataset.drawHeight);
+
+        ctx.beginPath();
+        points.forEach((point, index) => {
+            const x = offsetX + (point[0] * drawWidth);
+            const y = offsetY + (point[1] * drawHeight);
+            if (index === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
+        });
+
+        ctx.strokeStyle = color;
+        ctx.lineWidth = isTemp ? 2 : (width || 4);
+        if (isTemp) ctx.setLineDash([5, 5]); else ctx.setLineDash([]);
+        ctx.stroke();
     }
 
     // Inicializar

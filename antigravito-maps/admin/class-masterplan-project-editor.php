@@ -109,6 +109,32 @@ class Masterplan_Project_Editor
             );
         }
 
+        // Obtener Rutas
+        $routes = get_posts(array(
+            'post_type' => 'masterplan_route',
+            'posts_per_page' => -1,
+            'meta_query' => array(
+                    array(
+                    'key' => '_project_id',
+                    'value' => $project_id,
+                    'compare' => '='
+                )
+            ),
+            'post_status' => array('publish', 'draft')
+        ));
+
+        $routes_data = array();
+        foreach ($routes as $route) {
+            $coordinates = get_post_meta($route->ID, '_route_coordinates', true);
+            $routes_data[] = array(
+                'id' => $route->ID,
+                'title' => $route->post_title,
+                'color' => get_post_meta($route->ID, '_route_color', true) ?: '#ffffff',
+                'width' => get_post_meta($route->ID, '_route_width', true) ?: 4,
+                'coordinates' => $coordinates ? json_decode($coordinates) : null
+            );
+        }
+
 ?>
         <div class="wrap masterplan-editor-wrap">
             <div class="masterplan-editor-header">
@@ -137,6 +163,7 @@ class Masterplan_Project_Editor
                     <div class="panel-header-tabs">
                         <div class="tab-item active" data-tab="lots">📍 Lotes</div>
                         <div class="tab-item" data-tab="pois">🚩 Puntos</div>
+                        <div class="tab-item" data-tab="routes">🛣️ Rutas</div>
                     </div>
 
                     <!-- Pestaña LOTES -->
@@ -224,6 +251,42 @@ class Masterplan_Project_Editor
                         </div>
                     </div>
 
+                    <!-- Pestaña RUTAS -->
+                    <div class="tab-content" id="tab-content-routes" style="display:none;">
+                        <div class="panel-actions">
+                            <button type="button" id="btn-new-route" class="button button-primary" style="width:100%">
+                                ➕ Nueva Ruta/Vía
+                            </button>
+                        </div>
+                        <div class="lots-list" id="routes-list">
+                            <?php if (empty($routes_data)): ?>
+                                <div class="no-items">
+                                    <p>No hay Rutas creadas</p>
+                                    <small>Haz clic en "Nueva Ruta" para comenzar</small>
+                                </div>
+                            <?php else: ?>
+                                <?php foreach ($routes_data as $route):
+                                    $has_path = !empty($route['coordinates']);
+                                ?>
+                                    <div class="route-item" data-route-id="<?php echo $route['id']; ?>">
+                                        <div class="lot-status-indicator" style="background: <?php echo $route['color']; ?>"></div>
+                                        <div class="lot-info">
+                                            <strong><?php echo esc_html($route['title']); ?></strong>
+                                        </div>
+                                        <div class="lot-actions">
+                                            <button type="button" class="btn-draw-route" title="Dibujar Ruta" style="color: <?php echo $has_path ? '#10b981' : '#ccc'; ?>">
+                                                ✏️
+                                            </button>
+                                            <button type="button" class="btn-delete-route" title="Eliminar Ruta" style="color: #ef4444;">
+                                                🗑️
+                                            </button>
+                                        </div>
+                                    </div>
+                                <?php endforeach; ?>
+                            <?php endif; ?>
+                        </div>
+                    </div>
+
                 </div>
 
                 <!-- Panel derecho: Editor de mapa/imagen -->
@@ -262,6 +325,17 @@ class Masterplan_Project_Editor
                             </button>
                             <button type="button" id="btn-save-poi" class="button button-primary" disabled>
                                 💾 Guardar Ubicación
+                            </button>
+                        </div>
+                        <div class="control-group" id="controls-routes" style="display:none;">
+                            <button type="button" id="btn-draw-route" class="button" disabled>
+                                ✏️ Trazar Ruta
+                            </button>
+                            <button type="button" id="btn-clear-route" class="button" disabled>
+                                🗑️ Borrar
+                            </button>
+                            <button type="button" id="btn-save-route" class="button button-primary" disabled>
+                                💾 Guardar Ruta
                             </button>
                         </div>
                         <div class="control-info">
@@ -368,6 +442,39 @@ class Masterplan_Project_Editor
                         <div class="form-actions">
                             <button type="button" class="button modal-close">Cancelar</button>
                             <button type="submit" class="button button-primary">Crear POI</button>
+                        </div>
+                    </form>
+                </div>
+            </div>
+
+            <!-- Modal para nueva Ruta -->
+            <div id="new-route-modal" class="modal-overlay" style="display: none;">
+                <div class="modal-content">
+                    <div class="modal-header">
+                        <h2>➕ Nueva Ruta/Vía</h2>
+                        <button type="button" class="modal-close">&times;</button>
+                    </div>
+                    <form id="new-route-form">
+                        <input type="hidden" name="project_id" value="<?php echo $project_id; ?>">
+
+                        <div class="form-row">
+                            <label for="new_route_title">Nombre de la Ruta *</label>
+                            <input type="text" id="new_route_title" name="title" required placeholder="Ej: Vía Principal de Acceso">
+                        </div>
+
+                        <div class="form-row">
+                            <label for="new_route_color">Color del Trazado</label>
+                            <input type="color" id="new_route_color" name="color" value="#ffffff">
+                        </div>
+
+                        <div class="form-row">
+                            <label for="new_route_width">Grosor de Línea</label>
+                            <input type="number" id="new_route_width" name="width" value="4" min="1" max="20">
+                        </div>
+
+                        <div class="form-actions">
+                            <button type="button" class="button modal-close">Cancelar</button>
+                            <button type="submit" class="button button-primary">Crear Ruta</button>
                         </div>
                     </form>
                 </div>
@@ -722,6 +829,7 @@ class Masterplan_Project_Editor
             projectId: <?php echo $project_id; ?>,
             lots: <?php echo json_encode($lots_data); ?>,
             pois: <?php echo json_encode($pois_data); ?>,
+            routes: <?php echo json_encode($routes_data); ?>,
             useCustomImage: <?php echo $use_custom_image == '1' ? 'true' : 'false'; ?>,
             customImageUrl: '<?php echo esc_js($custom_image_url); ?>',
             centerLat: <?php echo floatval($center_lat); ?>,
@@ -1113,5 +1221,64 @@ class Masterplan_Project_Editor
         else {
             wp_send_json_error(array('message' => 'Error al eliminar'));
         }
+    }
+
+    /**
+     * AJAX: Crear Ruta
+     */
+    public function create_route()
+    {
+        check_ajax_referer('masterplan_admin_nonce', 'nonce');
+        if (!current_user_can('manage_options')) wp_send_json_error(array('message' => 'Permisos insuficientes'));
+
+        $project_id = isset($_POST['project_id']) ? absint($_POST['project_id']) : 0;
+        $title = isset($_POST['title']) ? sanitize_text_field($_POST['title']) : '';
+        $color = isset($_POST['color']) ? sanitize_text_field($_POST['color']) : '#ffffff';
+        $width = isset($_POST['width']) ? absint($_POST['width']) : 4;
+
+        if (!$project_id || !$title) wp_send_json_error(array('message' => 'Datos incompletos'));
+
+        $route_id = wp_insert_post(array(
+            'post_type' => 'masterplan_route',
+            'post_title' => $title,
+            'post_status' => 'publish'
+        ));
+
+        if (is_wp_error($route_id)) wp_send_json_error(array('message' => 'Error al crear'));
+
+        update_post_meta($route_id, '_project_id', $project_id);
+        update_post_meta($route_id, '_route_color', $color);
+        update_post_meta($route_id, '_route_width', $width);
+
+        wp_send_json_success(array('message' => 'Ruta creada'));
+    }
+
+    /**
+     * AJAX: Guardar coordenadas Ruta
+     */
+    public function save_route_path()
+    {
+        check_ajax_referer('masterplan_admin_nonce', 'nonce');
+        if (!current_user_can('manage_options')) wp_send_json_error(array('message' => 'Permisos insuficientes'));
+
+        $route_id = isset($_POST['route_id']) ? absint($_POST['route_id']) : 0;
+        $coordinates = isset($_POST['coordinates']) ? $_POST['coordinates'] : ''; // JSON string
+
+        if (!$route_id || !$coordinates) wp_send_json_error(array('message' => 'Datos incompletos'));
+
+        update_post_meta($route_id, '_route_coordinates', stripslashes($coordinates));
+        wp_send_json_success(array('message' => 'Ruta guardada'));
+    }
+
+    /**
+     * AJAX: Eliminar Ruta
+     */
+    public function delete_route()
+    {
+        check_ajax_referer('masterplan_admin_nonce', 'nonce');
+        if (!current_user_can('manage_options')) wp_send_json_error(array('message' => 'Permisos insuficientes'));
+        $route_id = isset($_POST['route_id']) ? absint($_POST['route_id']) : 0;
+        if(wp_delete_post($route_id, true)) wp_send_json_success();
+        else wp_send_json_error();
     }
 }

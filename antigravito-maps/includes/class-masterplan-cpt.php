@@ -87,6 +87,38 @@ class Masterplan_CPT
         );
 
         register_post_type('masterplan_poi', $poi_args);
+
+        // Registrar Rutas (Vías)
+        $route_labels = array(
+            'name' => 'Rutas',
+            'singular_name' => 'Ruta',
+            'menu_name' => 'Rutas',
+            'add_new' => 'Agregar Nueva',
+            'add_new_item' => 'Agregar Nueva Ruta',
+            'new_item' => 'Nueva Ruta',
+            'edit_item' => 'Editar Ruta',
+            'view_item' => 'Ver Ruta',
+            'all_items' => 'Todas las Rutas',
+            'search_items' => 'Buscar Rutas',
+            'parent_item_colon' => 'Proyecto Padre:',
+        );
+
+        $route_args = array(
+            'labels' => $route_labels,
+            'public' => true,
+            'publicly_queryable' => true,
+            'show_ui' => true,
+            'show_in_menu' => false,
+            'query_var' => true,
+            'rewrite' => array('slug' => 'ruta'),
+            'capability_type' => 'post',
+            'has_archive' => false,
+            'hierarchical' => false,
+            'supports' => array('title', 'editor'),
+            'show_in_rest' => true,
+        );
+
+        register_post_type('masterplan_route', $route_args);
     }
 
     /**
@@ -139,6 +171,66 @@ class Masterplan_CPT
             'normal',
             'high'
         );
+
+        // Meta box para Logo del Proyecto (en CPT Proyecto)
+        add_meta_box(
+            'masterplan_project_logo',
+            'Logo del Proyecto',
+            array($this, 'render_project_logo_metabox'),
+            'proyecto',
+            'side',
+            'default'
+        );
+    }
+
+    /**
+     * Renderizar Meta Box de Logo del Proyecto
+     */
+    public function render_project_logo_metabox($post)
+    {
+        $logo_id = get_post_meta($post->ID, '_project_logo_id', true);
+        $logo_url = $logo_id ? wp_get_attachment_url($logo_id) : '';
+
+        wp_nonce_field('masterplan_save_project_logo', 'masterplan_project_logo_nonce');
+        ?>
+        <div class="image-upload-container">
+            <input type="hidden" name="project_logo_id" id="project_logo_id" value="<?php echo esc_attr($logo_id); ?>">
+            <div id="project-logo-preview" style="margin-bottom: 10px; <?php echo $logo_url ? '' : 'display:none;'; ?>">
+                <img src="<?php echo esc_url($logo_url); ?>" style="max-width: 100%; border: 1px solid #ddd; padding: 5px; border-radius: 4px;">
+            </div>
+            <button type="button" class="button" id="btn-upload-project-logo"><?php echo $logo_url ? 'Cambiar Logo' : 'Subir Logo'; ?></button>
+            <button type="button" class="button" id="btn-remove-project-logo" style="<?php echo $logo_url ? '' : 'display:none;'; ?> color: #ef4444;">Eliminar</button>
+        </div>
+        <p class="description">Este logo aparecerá en el visor frontend.</p>
+        <script>
+        jQuery(document).ready(function($) {
+            var frame;
+            $('#btn-upload-project-logo').on('click', function(e) {
+                e.preventDefault();
+                if (frame) { frame.open(); return; }
+                frame = wp.media({
+                    title: 'Seleccionar Logo del Proyecto',
+                    button: { text: 'Usar este logo' },
+                    multiple: false
+                });
+                frame.on('select', function() {
+                    var attachment = frame.state().get('selection').first().toJSON();
+                    $('#project_logo_id').val(attachment.id);
+                    $('#project-logo-preview').html('<img src="'+attachment.url+'" style="max-width:100%;">').show();
+                    $('#btn-upload-project-logo').text('Cambiar Logo');
+                    $('#btn-remove-project-logo').show();
+                });
+                frame.open();
+            });
+            $('#btn-remove-project-logo').on('click', function() {
+                $('#project_logo_id').val('');
+                $('#project-logo-preview').hide().empty();
+                $('#btn-upload-project-logo').text('Subir Logo');
+                $(this).hide();
+            });
+        });
+        </script>
+        <?php
     }
 
     /**
@@ -405,6 +497,15 @@ class Masterplan_CPT
         // Guardar proyecto asociado (común para ambos)
         if (isset($_POST['project_id'])) {
             update_post_meta($post_id, '_project_id', absint($_POST['project_id']));
+        }
+
+        // Guardar datos del Proyecto (Logo)
+        if ($post_type === 'proyecto') {
+            if (isset($_POST['masterplan_project_logo_nonce']) && wp_verify_nonce($_POST['masterplan_project_logo_nonce'], 'masterplan_save_project_logo')) {
+                if (isset($_POST['project_logo_id'])) {
+                    update_post_meta($post_id, '_project_logo_id', absint($_POST['project_logo_id']));
+                }
+            }
         }
 
         // Guardar datos del POI

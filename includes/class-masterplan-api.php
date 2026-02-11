@@ -21,6 +21,13 @@ class Masterplan_API
             'permission_callback' => '__return_true',
         ));
 
+        // Ruta para obtener rutas (vías)
+        register_rest_route('masterplan/v1', '/routes', array(
+            'methods' => 'GET',
+            'callback' => array($this, 'get_routes'),
+            'permission_callback' => '__return_true'
+        ));
+
         // Endpoint para obtener lotes de un proyecto
         register_rest_route('masterplan/v1', '/projects/(?P<project_id>\d+)/lots', array(
             'methods' => 'GET',
@@ -114,6 +121,53 @@ class Masterplan_API
                 ),
             ),
         ));
+    }
+
+    /**
+     * Obtener Rutas (Vías)
+     */
+    public function get_routes($request)
+    {
+        $project_id = $request->get_param('project_id');
+
+        $args = array(
+            'post_type' => 'masterplan_route',
+            'posts_per_page' => -1,
+            'post_status' => 'publish'
+        );
+
+        if ($project_id) {
+            $args['meta_query'] = array(
+                array(
+                    'key' => '_project_id',
+                    'value' => $project_id,
+                    'compare' => '='
+                )
+            );
+        }
+
+        $posts = get_posts($args);
+        $data = array();
+
+        global $wpdb;
+        $table_name = $wpdb->prefix . 'masterplan_polygons'; // Reuse table or add new meta?
+        // Wait, where do we store the route coordinates?
+        // For Lots we used a custom table. For Routes, we should probably do the same or use meta.
+        // Let's use post_meta '_route_coordinates' for simplicity as they are just LineStrings.
+
+        foreach ($posts as $post) {
+            $coords = get_post_meta($post->ID, '_route_coordinates', true);
+
+            $data[] = array(
+                'id' => $post->ID,
+                'title' => $post->post_title,
+                'coordinates' => $coords ? json_decode($coords) : null,
+                'color' => get_post_meta($post->ID, '_route_color', true) ?: '#ffffff',
+                'width' => get_post_meta($post->ID, '_route_width', true) ?: 4
+            );
+        }
+
+        return rest_ensure_response($data);
     }
 
     /**

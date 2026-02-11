@@ -166,6 +166,10 @@ class Masterplan_Public
             $zoom = get_post_meta($project_id, '_project_zoom', true) ?: 16;
             $project_title = $project->post_title;
             $project_location = get_post_meta($project_id, '_project_location', true);
+
+            // Logo
+            $logo_id = get_post_meta($project_id, '_project_logo_id', true);
+            $logo_url = $logo_id ? wp_get_attachment_url($logo_id) : '';
         }
         else {
             $use_custom_image = false;
@@ -175,6 +179,7 @@ class Masterplan_Public
             $zoom = get_option('masterplan_map_zoom', '14');
             $project_title = '';
             $project_location = '';
+            $logo_url = '';
         }
 
         ob_start();
@@ -214,6 +219,16 @@ class Masterplan_Public
 
             <!-- Overlay -->
             <div id="masterplan-overlay" class="masterplan-overlay"></div>
+
+            <!-- UI Container (Controls, Logo) -->
+            <div class="masterplan-ui-controls">
+                <div id="masterplan-logo-container"></div>
+                <div class="masterplan-control-bar">
+                    <button class="mp-control-btn active" id="btn-toggle-project" title="Ver Proyecto">🏠 Proyecto</button>
+                    <button class="mp-control-btn active" id="btn-toggle-routes" title="Ver Vías/Rutas">🛣️ Vías</button>
+                    <button class="mp-control-btn active" id="btn-toggle-pois" title="Ver Puntos de Interés">📍 Puntos</button>
+                </div>
+            </div>
         </div>
 
         <script>
@@ -221,6 +236,7 @@ class Masterplan_Public
             projectId: <?php echo $project_id ?: 'null'; ?>,
             useCustomImage: <?php echo $use_custom_image ? 'true' : 'false'; ?>,
             customImageUrl: '<?php echo esc_js($custom_image_url); ?>',
+            logoUrl: '<?php echo esc_js($logo_url); ?>',
             centerLat: <?php echo floatval($center_lat); ?>,
             centerLng: <?php echo floatval($center_lng); ?>,
             zoom: <?php echo intval($zoom); ?>
