@@ -209,8 +209,8 @@ class Masterplan_Admin
             'ajaxUrl' => admin_url('admin-ajax.php'),
             'nonce' => wp_create_nonce('masterplan_admin_nonce'),
             'apiKey' => get_option('masterplan_api_key', ''),
-            'centerLat' => get_option('masterplan_map_center_lat', '4.5709'),
-            'centerLng' => get_option('masterplan_map_center_lng', '-74.2973'),
+            'centerLat' => get_option('masterplan_map_center_lat', '2.4568'),
+            'centerLng' => get_option('masterplan_map_center_lng', '-76.6310'),
             'zoom' => get_option('masterplan_map_zoom', '14'),
             'lotId' => isset($_GET['lot_id']) ? absint($_GET['lot_id']) : 0,
         )

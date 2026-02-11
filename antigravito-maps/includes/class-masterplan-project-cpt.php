@@ -80,6 +80,15 @@ class Masterplan_Project_CPT
         );
 
         add_meta_box(
+            'masterplan_project_logo',
+            'Logo del Proyecto',
+            array($this, 'render_logo_metabox'),
+            'proyecto',
+            'side',
+            'default'
+        );
+
+        add_meta_box(
             'masterplan_project_lots',
             'Lotes del Proyecto',
             array($this, 'render_lots_metabox'),
@@ -108,6 +117,11 @@ class Masterplan_Project_CPT
         $location_name = get_post_meta($post->ID, '_project_location_name', true);
         $center_lat = get_post_meta($post->ID, '_project_center_lat', true);
         $center_lng = get_post_meta($post->ID, '_project_center_lng', true);
+
+        // Default coordinates if not set
+        if (!$center_lat) $center_lat = '2.4568';
+        if (!$center_lng) $center_lng = '-76.6310';
+
         $zoom = get_post_meta($post->ID, '_project_zoom', true) ?: 16;
 
 ?>
@@ -149,6 +163,75 @@ class Masterplan_Project_CPT
                 </td>
             </tr>
         </table>
+        <?php
+    }
+
+    /**
+     * Renderizar Meta Box de Logo
+     */
+    public function render_logo_metabox($post)
+    {
+        $logo_id = get_post_meta($post->ID, '_project_logo_id', true);
+        $logo_url = $logo_id ? wp_get_attachment_url($logo_id) : '';
+
+        ?>
+        <div style="text-align: center;">
+            <input type="hidden" id="project_logo_id" name="project_logo_id" value="<?php echo esc_attr($logo_id); ?>">
+            <div id="project-logo-preview" style="margin-bottom: 15px; min-height: 80px; display: flex; align-items: center; justify-content: center; background: #f0f0f1; border-radius: 4px; padding: 10px;">
+                <?php if ($logo_url): ?>
+                    <img src="<?php echo esc_url($logo_url); ?>" style="max-width: 100%; max-height: 100px;">
+                <?php else: ?>
+                    <span style="color: #ccc;">Sin Logo</span>
+                <?php endif; ?>
+            </div>
+
+            <button type="button" id="btn-upload-logo" class="button button-secondary" style="width: 100%; margin-bottom: 5px;">
+                <?php echo $logo_url ? 'Cambiar Logo' : 'Subir Logo'; ?>
+            </button>
+
+            <button type="button" id="btn-remove-logo" class="button-link-delete" style="<?php echo !$logo_id ? 'display:none;' : ''; ?>; color: #a00; text-decoration: none;">
+                Eliminar Logo
+            </button>
+        </div>
+
+        <script>
+        jQuery(document).ready(function($) {
+            var logoFrame;
+
+            $('#btn-upload-logo').on('click', function(e) {
+                e.preventDefault();
+
+                if (logoFrame) {
+                    logoFrame.open();
+                    return;
+                }
+
+                logoFrame = wp.media({
+                    title: 'Seleccionar Logo del Proyecto',
+                    button: { text: 'Usar como Logo' },
+                    multiple: false
+                });
+
+                logoFrame.on('select', function() {
+                    var attachment = logoFrame.state().get('selection').first().toJSON();
+                    $('#project_logo_id').val(attachment.id);
+                    $('#project-logo-preview').html('<img src="' + attachment.url + '" style="max-width: 100%; max-height: 100px;">');
+                    $('#btn-remove-logo').show();
+                    $('#btn-upload-logo').text('Cambiar Logo');
+                });
+
+                logoFrame.open();
+            });
+
+            $('#btn-remove-logo').on('click', function(e) {
+                e.preventDefault();
+                $('#project_logo_id').val('');
+                $('#project-logo-preview').html('<span style="color: #ccc;">Sin Logo</span>');
+                $(this).hide();
+                $('#btn-upload-logo').text('Subir Logo');
+            });
+        });
+        </script>
         <?php
     }
 
@@ -415,6 +498,11 @@ class Masterplan_Project_CPT
 
         if (isset($_POST['project_custom_image_id'])) {
             update_post_meta($post_id, '_project_custom_image_id', absint($_POST['project_custom_image_id']));
+        }
+
+        // Guardar Logo
+        if (isset($_POST['project_logo_id'])) {
+            update_post_meta($post_id, '_project_logo_id', absint($_POST['project_logo_id']));
         }
     }
 }

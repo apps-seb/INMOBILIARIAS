@@ -94,12 +94,64 @@ jQuery(document).ready(function ($) {
             routesData.forEach(route => {
                 const layerId = 'route-' + route.id;
                 if (map.getLayer(layerId)) {
-                    map.setLayoutProperty(layerId, 'visibility', visible ? 'visible' : 'none');
+                    if (visible) {
+                         // Reset and animate "drawing"
+                         animateRouteDrawing(layerId, route.coordinates);
+                    } else {
+                         // Hide immediately or fade out
+                         map.setPaintProperty(layerId, 'line-opacity', 0);
+                    }
                 }
             });
         } else if (canvas) {
-            redrawCanvas(); // Canvas redraw checks button state or global flag
+            // For canvas, we just toggle redraw. Advanced animation on canvas is complex here.
+            redrawCanvas();
         }
+    }
+
+    // Animation loop for MapLibre routes (simulating drawing)
+    function animateRouteDrawing(layerId, coordinates) {
+        // First make it visible but transparent or dashed
+        map.setPaintProperty(layerId, 'line-opacity', 1);
+
+        // We use a trick: line-dasharray to simulate drawing.
+        // But MapLibre line-dasharray is static in some versions or hard to animate smoothly without a custom source update loop.
+        // A simpler "Luxury" effect is a slow fade in + subtle dash movement or just a progress line.
+        // Given constraints, we will use a requestAnimationFrame loop to update the 'data' of the source
+        // to progressively add points (LineString growth).
+
+        // Fix: Ensure sourceId matches the source ID used in displayRoutesOnMap (which is 'route-' + route.id)
+        // layerId is also 'route-' + route.id
+        const sourceId = layerId;
+        const totalPoints = coordinates.length;
+        if (totalPoints < 2) return;
+
+        let currentIdx = 1;
+        // Adjust speed: skip points if too many
+        const step = Math.ceil(totalPoints / 100) || 1;
+
+        function frame() {
+            if (!map.getSource(sourceId)) return;
+
+            currentIdx += step;
+            if (currentIdx > totalPoints) currentIdx = totalPoints;
+
+            const subset = coordinates.slice(0, currentIdx);
+
+            map.getSource(sourceId).setData({
+                type: 'Feature',
+                geometry: {
+                    type: 'LineString',
+                    coordinates: subset
+                }
+            });
+
+            if (currentIdx < totalPoints) {
+                requestAnimationFrame(frame);
+            }
+        }
+
+        frame();
     }
 
     function togglePoisVisibility(visible) {
@@ -143,7 +195,12 @@ jQuery(document).ready(function ($) {
             unit: 'metric'
         }), 'bottom-left');
 
-        map.on('load', function () {
+        // Pre-fetch data immediately
+        const lotsPromise = fetchLots();
+        const poisPromise = fetchPOIs();
+        const routesPromise = fetchRoutes();
+
+        map.on('load', async function () {
             map.addSource('terrain', {
                 type: 'raster-dem',
                 url: `https://api.maptiler.com/tiles/terrain-rgb/tiles.json?key=${masterplanPublic.apiKey}`,
@@ -155,9 +212,20 @@ jQuery(document).ready(function ($) {
                 exaggeration: 1.5
             });
 
-            loadLots();
-            loadPOIs();
-            loadRoutes();
+            // Wait for data and render
+            try {
+                const [lots, pois, routes] = await Promise.all([lotsPromise, poisPromise, routesPromise]);
+
+                lotsData = lots;
+                poisData = pois;
+                routesData = routes;
+
+                displayLotsOnMap(lots);
+                displayPOIsOnMap(pois);
+                displayRoutesOnMap(routes);
+            } catch (e) {
+                console.error('Error loading map data', e);
+            }
 
             // Zoom Scaling for POIs
             map.on('zoom', updatePoiScale);
@@ -191,16 +259,31 @@ jQuery(document).ready(function ($) {
         ctx = canvas.getContext('2d');
         backgroundImage = document.getElementById('masterplan-background');
 
-        backgroundImage.onload = function () {
+        // Pre-fetch
+        const lotsPromise = fetchLots();
+        const poisPromise = fetchPOIs();
+        const routesPromise = fetchRoutes();
+
+        const render = async () => {
             resizeCanvas();
-            loadLots();
-            loadPOIs();
+            try {
+                const [lots, pois, routes] = await Promise.all([lotsPromise, poisPromise, routesPromise]);
+                lotsData = lots;
+                poisData = pois;
+                routesData = routes;
+
+                redrawCanvas();
+                // Start pulse animation
+                setInterval(redrawCanvas, 100);
+            } catch(e) {
+                console.error('Error loading canvas data', e);
+            }
         };
 
+        backgroundImage.onload = render;
+
         if (backgroundImage.complete) {
-            resizeCanvas();
-            loadLots();
-            loadPOIs();
+            render();
         }
 
         window.addEventListener('resize', resizeCanvas);
@@ -359,13 +442,24 @@ jQuery(document).ready(function ($) {
         routes.forEach(route => {
              if(!route.coordinates || route.coordinates.length < 2) return;
              const sourceId = 'route-' + route.id;
+
+             // Check initial state
+             const isVisible = $('#btn-toggle-routes').hasClass('active');
+
              map.addSource(sourceId, {
                  type: 'geojson',
-                 data: { type: 'Feature', geometry: { type: 'LineString', coordinates: route.coordinates } }
+                 // If visible initially, show full. If not, we might animate later.
+                 data: { type: 'Feature', geometry: { type: 'LineString', coordinates: isVisible ? route.coordinates : [] } }
              });
+
              map.addLayer({
                  id: sourceId, type: 'line', source: sourceId,
-                 paint: { 'line-color': route.color, 'line-width': parseInt(route.width) },
+                 paint: {
+                     'line-color': route.color,
+                     'line-width': parseInt(route.width),
+                     'line-opacity': isVisible ? 1 : 0,
+                     'line-blur': 1 // Soft edge for "glow" feel
+                 },
                  layout: { 'line-join': 'round', 'line-cap': 'round' }
              });
         });
@@ -494,59 +588,30 @@ jQuery(document).ready(function ($) {
     }
 
     /**
-     * Cargar lotes desde la API
+     * Fetch Helper: Lots
      */
-    function loadLots() {
+    function fetchLots() {
         let url = masterplanPublic.apiUrl + 'lots';
-        if (projectId) {
-            url += '?project_id=' + projectId;
-        }
-
-        $.ajax({
-            url: url,
-            type: 'GET',
-            success: function (lots) {
-                lotsData = lots;
-
-                if (useCustomImage && canvas) {
-                    redrawCanvas();
-                    // Animar pulse
-                    setInterval(redrawCanvas, 100);
-                } else if (map) {
-                    displayLotsOnMap(lots);
-                }
-            },
-            error: function () {
-                console.error('Error al cargar lotes');
-            }
-        });
+        if (projectId) url += '?project_id=' + projectId;
+        return $.get(url);
     }
 
     /**
-     * Cargar POIs desde la API
+     * Fetch Helper: POIs
      */
-    function loadPOIs() {
+    function fetchPOIs() {
         let url = masterplanPublic.apiUrl + 'pois';
-        if (projectId) {
-            url += '?project_id=' + projectId;
-        }
+        if (projectId) url += '?project_id=' + projectId;
+        return $.get(url);
+    }
 
-        $.ajax({
-            url: url,
-            type: 'GET',
-            success: function (pois) {
-                poisData = pois;
-
-                if (useCustomImage && canvas) {
-                    redrawCanvas();
-                } else if (map) {
-                    displayPOIsOnMap(pois);
-                }
-            },
-            error: function () {
-                console.error('Error al cargar POIs');
-            }
-        });
+    /**
+     * Fetch Helper: Routes
+     */
+    function fetchRoutes() {
+        let url = masterplanPublic.apiUrl + 'routes';
+        if (projectId) url += '?project_id=' + projectId;
+        return $.get(url);
     }
 
     /**
@@ -626,6 +691,13 @@ jQuery(document).ready(function ($) {
             }
         });
 
+        // Render Overlays
+        lots.forEach(lot => {
+            if (lot.overlay_url && lot.overlay_corners) {
+                renderFrontendOverlay(lot);
+            }
+        });
+
         addLotMarkers(lots);
 
         map.on('click', 'lots-fill', function (e) {
@@ -652,6 +724,30 @@ jQuery(document).ready(function ($) {
             }
             hoveredLotId = null;
         });
+    }
+
+    function renderFrontendOverlay(lot) {
+        const sourceId = 'overlay-' + lot.id;
+        // Check if exists
+        if (map.getSource(sourceId)) return;
+
+        map.addSource(sourceId, {
+            type: 'image',
+            url: lot.overlay_url,
+            coordinates: lot.overlay_corners
+        });
+
+        // Add before lots-fill to be underneath the polygon color (or above terrain)
+        // If we want it ON TOP of the terrain but UNDER the lot color:
+        // We look for 'lots-fill' layer ID.
+        const beforeLayer = map.getLayer('lots-fill') ? 'lots-fill' : undefined;
+
+        map.addLayer({
+            id: sourceId,
+            type: 'raster',
+            source: sourceId,
+            paint: { 'raster-opacity': 1 }
+        }, beforeLayer);
     }
 
     function addLotMarkers(lots) {
@@ -760,9 +856,10 @@ jQuery(document).ready(function ($) {
     function updatePoiScale() {
         if (!map) return;
         const zoom = map.getZoom();
-        // Scale logic: 1 at zoom 17, 0.4 at zoom 12
-        let scale = 0.4 + 0.6 * ((zoom - 12) / (17 - 12));
-        scale = Math.max(0.4, Math.min(1.2, scale)); // Allow slight overscale at very close zoom
+        // Scale logic: Reduced slightly as requested (smaller start)
+        // 0.3 at zoom 12, 0.8 at zoom 17
+        let scale = 0.3 + 0.5 * ((zoom - 12) / (17 - 12));
+        scale = Math.max(0.3, Math.min(0.9, scale));
 
         // Apply scale ONLY, no translation. MapLibre handles the position of the wrapper.
         // The wrapper is anchored at 'bottom', so the bottom-center of the wrapper is at the lat/lng.

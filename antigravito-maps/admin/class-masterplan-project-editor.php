@@ -39,8 +39,8 @@ class Masterplan_Project_Editor
         $use_custom_image = get_post_meta($project_id, '_project_use_custom_image', true);
         $custom_image_id = get_post_meta($project_id, '_project_custom_image_id', true);
         $custom_image_url = $custom_image_id ? wp_get_attachment_url($custom_image_id) : '';
-        $center_lat = get_post_meta($project_id, '_project_center_lat', true) ?: get_option('masterplan_map_center_lat', '4.5709');
-        $center_lng = get_post_meta($project_id, '_project_center_lng', true) ?: get_option('masterplan_map_center_lng', '-74.2973');
+        $center_lat = get_post_meta($project_id, '_project_center_lat', true) ?: get_option('masterplan_map_center_lat', '2.4568');
+        $center_lng = get_post_meta($project_id, '_project_center_lng', true) ?: get_option('masterplan_map_center_lng', '-76.6310');
         $zoom = get_post_meta($project_id, '_project_zoom', true) ?: 16;
 
         // Obtener lotes del proyecto
@@ -68,6 +68,11 @@ class Masterplan_Project_Editor
                 $lot->ID
             ));
 
+            // Overlay data
+            $overlay_id = get_post_meta($lot->ID, '_lot_overlay_id', true);
+            $overlay_url = $overlay_id ? wp_get_attachment_url($overlay_id) : '';
+            $overlay_corners = get_post_meta($lot->ID, '_lot_overlay_corners', true); // Array of 4 coords
+
             $lots_data[] = array(
                 'id' => $lot->ID,
                 'title' => $lot->post_title,
@@ -76,7 +81,9 @@ class Masterplan_Project_Editor
                 'price' => get_post_meta($lot->ID, '_lot_price', true),
                 'area' => get_post_meta($lot->ID, '_lot_area', true),
                 'coordinates' => $polygon ? json_decode($polygon->coordinates, true) : null,
-                'thumbnail' => get_the_post_thumbnail_url($lot->ID, 'thumbnail')
+                'thumbnail' => get_the_post_thumbnail_url($lot->ID, 'thumbnail'),
+                'overlay_url' => $overlay_url,
+                'overlay_corners' => $overlay_corners ? json_decode($overlay_corners) : null
             );
         }
 
@@ -309,15 +316,25 @@ class Masterplan_Project_Editor
                     <!-- Controles del editor -->
                     <div class="editor-controls">
                         <div class="control-group" id="controls-lots">
-                            <button type="button" id="btn-draw-polygon" class="button" disabled>
-                                🎨 Dibujar Polígono
+                            <button type="button" id="btn-draw-polygon" class="button" disabled title="Dibujar polígono del lote">
+                                🎨 Dibujar
                             </button>
-                            <button type="button" id="btn-clear-polygon" class="button" disabled>
-                                🗑️ Borrar
+                            <button type="button" id="btn-edit-overlay" class="button" disabled title="Ajustar imagen superpuesta">
+                                🖼️ Overlay
                             </button>
                             <button type="button" id="btn-save-polygon" class="button button-primary" disabled>
                                 💾 Guardar
                             </button>
+                            <button type="button" id="btn-clear-polygon" class="button" disabled title="Borrar polígono">
+                                🗑️
+                            </button>
+                        </div>
+
+                        <!-- Overlay Tools (Hidden by default) -->
+                        <div class="control-group" id="controls-overlay" style="display:none; border-left: 1px solid #ddd; padding-left: 10px;">
+                            <button type="button" id="btn-upload-overlay" class="button">📤 Subir Img</button>
+                            <button type="button" id="btn-remove-overlay" class="button" style="color:red;">❌</button>
+                            <span style="font-size:11px; color:#666;">Arrastra las 4 esquinas</span>
                         </div>
                         <div class="control-group" id="controls-pois" style="display:none;">
                             <button type="button" id="btn-place-poi" class="button" disabled>
@@ -464,7 +481,7 @@ class Masterplan_Project_Editor
 
                         <div class="form-row">
                             <label for="new_route_color">Color del Trazado</label>
-                            <input type="color" id="new_route_color" name="color" value="#ffffff">
+                            <input type="color" id="new_route_color" name="color" value="#ffffff" style="height: 40px; padding: 2px;">
                         </div>
 
                         <div class="form-row">
@@ -1056,6 +1073,33 @@ class Masterplan_Project_Editor
             'message' => 'Polígono guardado exitosamente',
             'lot_id' => $lot_id
         ));
+    }
+
+    /**
+     * AJAX: Guardar Overlay de Lote
+     */
+    public function save_lot_overlay()
+    {
+        check_ajax_referer('masterplan_admin_nonce', 'nonce');
+        if (!current_user_can('manage_options')) wp_send_json_error();
+
+        $lot_id = isset($_POST['lot_id']) ? absint($_POST['lot_id']) : 0;
+        $overlay_id = isset($_POST['overlay_id']) ? absint($_POST['overlay_id']) : 0;
+        $corners = isset($_POST['corners']) ? $_POST['corners'] : ''; // JSON string
+
+        if (!$lot_id) wp_send_json_error();
+
+        if ($overlay_id) {
+            update_post_meta($lot_id, '_lot_overlay_id', $overlay_id);
+        } else {
+            delete_post_meta($lot_id, '_lot_overlay_id');
+        }
+
+        if ($corners) {
+            update_post_meta($lot_id, '_lot_overlay_corners', stripslashes($corners));
+        }
+
+        wp_send_json_success(array('message' => 'Overlay guardado'));
     }
 
 
